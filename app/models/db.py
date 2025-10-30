@@ -3,8 +3,6 @@
 import os
 import re
 import logging
-import hashlib
-import uuid
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,9 +53,7 @@ def _should_use_sqlite() -> bool:
 # Prefer DATABASE_URL for Postgres; fallback to SUPABASE_URL for backwards-compat
 _SUPABASE_RAW = (os.getenv("DATABASE_URL") or os.getenv("SUPABASE_URL") or "").strip()
 SUPABASE_URL = _normalize_pg_url(_SUPABASE_RAW)
-ANALYTICS_SALT = os.getenv('ANALYTICS_SALT','dev')
 SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
-GTM_ID = os.getenv("GTM_CONTAINER_ID", "GTM-MNJ9SSL9")
 PER_PAGE_MAX = 100  # safety cap
 RATELIMIT_STORAGE_URL = os.getenv("RATELIMIT_STORAGE_URL", "memory://")
 
@@ -173,9 +169,7 @@ def close_db(_e=None):
 # ------------------------- Subscriber & Analytics Helpers --------------------
 
 def insert_subscriber(email: str) -> str:
-    """Insert a subscriber and log a subscribe_event.
-    Returns 'ok' or 'duplicate'.
-    """
+    """Insert a subscriber record; return 'ok' or 'duplicate'."""
     db = get_db()
     try:
         with db.cursor() as cur:
@@ -183,85 +177,53 @@ def insert_subscriber(email: str) -> str:
                 "INSERT INTO subscribers(email, created_at) VALUES(%s, %s)",
                 (email, _now_iso()),
             )
-        with db.cursor() as cur:
-            cur.execute(
-                "INSERT INTO subscribe_events(created_at, email_hash, status) VALUES(%s,%s,%s)",
-                (_now_iso(), _hash(email), "subscribed"),
-            )
         return "ok"
     except Exception:
-        try:
-            with db.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO subscribe_events(created_at, email_hash, status) VALUES(%s,%s,%s)",
-                    (_now_iso(), _hash(email), "duplicate"),
-                )
-        except Exception:
-            pass
         return "duplicate"
 
 
-def get_recent_searches(limit: int = 20):
-    """Return the last N entries from search_logs (most recent first)."""
+def insert_search_event(
+    *,
+    raw_title: str,
+    raw_country: str,
+    norm_title: str,
+    norm_country: str,
+    result_count: int,
+    page: int,
+    per_page: int,
+) -> None:
+    """Persist a lightweight search log for analytics."""
     db = get_db()
-    limit = max(1, int(limit or 1))
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT term, country, created_at FROM search_logs ORDER BY created_at DESC LIMIT %s",
-            (limit,),
-        )
-        return cur.fetchall()
-
-def get_analytics_summary():
-    """Return basic analytics summary using existing tables.
-    - total searches today
-    - top 5 most viewed jobs (by job_view_events count)
-    - new subscribers today
-    - conversion rate (subscribed events / searches today)
-    """
-    db = get_db()
-    # Determine today's ISO date prefix (YYYY-MM-DD)
-    today = datetime.now(timezone.utc).date().isoformat()
-    summary = {
-        "searches_today": 0,
-        "top_viewed_jobs": [],
-        "new_subscribers_today": 0,
-        "conversion_rate": 0.0,
-    }
+    payload = (
+        _now_iso(),
+        (raw_title or "").strip(),
+        (raw_country or "").strip(),
+        (norm_title or "").strip(),
+        (norm_country or "").strip(),
+        int(result_count),
+        int(page),
+        int(per_page),
+    )
     try:
         with db.cursor() as cur:
             cur.execute(
-                "SELECT COUNT(1) FROM search_events WHERE DATE(created_at) = %s",
-                (today,),
-            )
-            row = cur.fetchone()
-            summary["searches_today"] = int(row[0]) if row else 0
-        with db.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(1) FROM subscribe_events WHERE status='subscribed' AND DATE(created_at) = %s",
-                (today,),
-            )
-            row = cur.fetchone()
-            summary["new_subscribers_today"] = int(row[0]) if row else 0
-        with db.cursor() as cur:
-            cur.execute(
                 """
-                SELECT job_title, COUNT(1) AS c
-                FROM job_view_events
-                WHERE DATE(created_at) = %s
-                GROUP BY job_title
-                ORDER BY c DESC
-                LIMIT 5
+                INSERT INTO search_events(
+                    created_at,
+                    raw_title,
+                    raw_country,
+                    norm_title,
+                    norm_country,
+                    result_count,
+                    page,
+                    per_page
+                ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                (today,),
+                payload,
             )
-            summary["top_viewed_jobs"] = [(title, count) for title, count in cur.fetchall()]
-        searches = summary["searches_today"] or 0
-        subs = summary["new_subscribers_today"] or 0
-        summary["conversion_rate"] = round((subs / searches) * 100, 2) if searches else 0.0
     except Exception:
+        # Swallow logging errors so search flow remains unaffected
         pass
-    return summary
 
 # ------------------------- Description Parsing ------------------------------
 
@@ -320,10 +282,16 @@ def init_db():
                 email TEXT PRIMARY KEY,
                 created_at TEXT
             );
-            CREATE TABLE IF NOT EXISTS search_logs (
-                term TEXT,
-                country TEXT,
-                created_at TEXT
+            CREATE TABLE IF NOT EXISTS search_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT,
+                raw_title TEXT,
+                raw_country TEXT,
+                norm_title TEXT,
+                norm_country TEXT,
+                result_count INTEGER,
+                page INTEGER,
+                per_page INTEGER
             );
             CREATE TABLE IF NOT EXISTS Jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -338,47 +306,7 @@ def init_db():
             CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_link_unique ON Jobs(link);
             CREATE INDEX IF NOT EXISTS idx_jobs_title_norm ON Jobs(job_title_norm);
             CREATE INDEX IF NOT EXISTS idx_jobs_location ON Jobs(location);
-            CREATE TABLE IF NOT EXISTS search_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT,
-                raw_title TEXT,
-                raw_country TEXT,
-                norm_title TEXT,
-                norm_country TEXT,
-                sal_floor INTEGER,
-                sal_ceiling INTEGER,
-                result_count INTEGER,
-                page INTEGER,
-                per_page INTEGER,
-                user_agent TEXT,
-                referer TEXT,
-                ip_hash TEXT,
-                session_id TEXT
-            );
             CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at);
-            CREATE INDEX IF NOT EXISTS idx_search_events_title ON search_events(norm_title);
-            CREATE INDEX IF NOT EXISTS idx_search_events_country ON search_events(norm_country);
-            CREATE TABLE IF NOT EXISTS job_view_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT,
-                job_id TEXT,
-                job_title TEXT,
-                company TEXT,
-                location TEXT,
-                norm_country TEXT,
-                user_agent TEXT,
-                ip_hash TEXT,
-                session_id TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_job_view_created ON job_view_events(created_at);
-            CREATE INDEX IF NOT EXISTS idx_job_view_country ON job_view_events(norm_country);
-            CREATE TABLE IF NOT EXISTS subscribe_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT,
-                email_hash TEXT,
-                status TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_subscribe_created ON subscribe_events(created_at);
             """
         )
         db.commit()
@@ -394,11 +322,18 @@ def init_db():
         )
         cur.execute(
             """
-            CREATE TABLE IF NOT EXISTS search_logs (
-                term TEXT,
-                country TEXT,
-                created_at TIMESTAMP
+            CREATE TABLE IF NOT EXISTS search_events (
+                id SERIAL PRIMARY KEY,
+                created_at TIMESTAMP,
+                raw_title TEXT NULL,
+                raw_country TEXT NULL,
+                norm_title TEXT NULL,
+                norm_country TEXT NULL,
+                result_count INTEGER,
+                page INTEGER,
+                per_page INTEGER
             );
+            CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at);
             """
         )
         cur.execute(
@@ -418,159 +353,13 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_jobs_location ON Jobs(location);
             """
         )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS search_events (
-                id BIGSERIAL PRIMARY KEY,
-                created_at TIMESTAMP,
-                raw_title TEXT,
-                raw_country TEXT,
-                norm_title TEXT,
-                norm_country TEXT,
-                sal_floor INTEGER,
-                sal_ceiling INTEGER,
-                result_count INTEGER,
-                page INTEGER,
-                per_page INTEGER,
-                user_agent TEXT,
-                referer TEXT,
-                ip_hash TEXT,
-                session_id TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at);
-            CREATE INDEX IF NOT EXISTS idx_search_events_title ON search_events(norm_title);
-            CREATE INDEX IF NOT EXISTS idx_search_events_country ON search_events(norm_country);
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS job_view_events (
-                id BIGSERIAL PRIMARY KEY,
-                created_at TIMESTAMP,
-                job_id TEXT,
-                job_title TEXT,
-                company TEXT,
-                location TEXT,
-                norm_country TEXT,
-                user_agent TEXT,
-                ip_hash TEXT,
-                session_id TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_job_view_created ON job_view_events(created_at);
-            CREATE INDEX IF NOT EXISTS idx_job_view_country ON job_view_events(norm_country);
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS subscribe_events (
-                id BIGSERIAL PRIMARY KEY,
-                created_at TIMESTAMP,
-                email_hash TEXT,
-                status TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_subscribe_created ON subscribe_events(created_at);
-            """
-        )
-# ------------------------- Analytics and Session Functions -------------------
-
-def _hash(value: str) -> str:
-    """Hash value for analytics."""
-    salt = ANALYTICS_SALT
-    v = (value or '').encode('utf-8')
-    return hashlib.sha256(salt.encode('utf-8') + v).hexdigest()
-
-def _ensure_sid():
-    """Ensure session ID exists in request."""
-    from flask import request, g
-    sid = request.cookies.get('sid')
-    if not sid:
-        sid = uuid.uuid4().hex
-        # store to set on response
-        setattr(g, '_sid_new', sid)
-    return sid
-
-def _client_meta():
-    """Get client metadata for analytics."""
-    from flask import request, g
-    ua = request.headers.get('User-Agent','')
-    ref = request.headers.get('Referer','')
-    xff = request.headers.get('X-Forwarded-For', '')
-    ip = (xff.split(',')[0].strip() if xff else (request.remote_addr or ''))
-    sid = request.cookies.get('sid') or getattr(g, '_sid_new', '') or ''
-    return ua, ref, _hash(ip), sid
-
-def _apply_sid_cookie(r):
-    """Apply session ID cookie to response."""
-    from flask import g, request
-    sid = getattr(g, '_sid_new', None)
-    if sid:
-        # Respect proxies (e.g., X-Forwarded-Proto: https) when deciding on Secure
-        xfp = (request.headers.get('X-Forwarded-Proto', '') or '').split(',')[0].strip().lower()
-        secure_flag = bool(request.is_secure) or xfp == 'https'
-        r.set_cookie('sid', sid, max_age=31536000, httponly=True, samesite='Lax', secure=secure_flag)
-    return r
+# ------------------------- Analytics Helpers ---------------------------------
 
 def _now_iso():
     """Get current timestamp in ISO format."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-# ------------------------- Analytics Logging Functions -----------------------
-
-def log_search_event(raw_title, raw_country, norm_title, norm_country, sal_floor, sal_ceiling, result_count, page, per_page):
-    """Log search event to database."""
-    from flask import request, g
-    ua, ref, ip_h, sid = _client_meta()
-    db = get_db()
-
-    with db.cursor() as cur:
-        cur.execute(
-            'INSERT INTO search_events(created_at,raw_title,raw_country,norm_title,norm_country,sal_floor,sal_ceiling,result_count,page,per_page,user_agent,referer,ip_hash,session_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-            (_now_iso(), raw_title or '', raw_country or '', norm_title or '', norm_country or '', sal_floor, sal_ceiling, result_count, page, per_page, ua[:300], ref[:300], ip_h, sid)
-        )
-
-def log_job_view_event(job_id, job_title, company, location, norm_country):
-    """Log job view event to database."""
-    from flask import request, g
-    ua, ref, ip_h, sid = _client_meta()
-    db = get_db()
-
-    with db.cursor() as cur:
-        cur.execute(
-            'INSERT INTO job_view_events(created_at,job_id,job_title,company,location,norm_country,user_agent,ip_hash,session_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-            (_now_iso(), str(job_id or ''), job_title or '', company or '', location or '', norm_country or '', ua[:300], ip_h, sid)
-        )
-
-def log_search(term, country):
-    """Log basic search to database."""
-    if not term and not country:
-        return
-
-    db = get_db()
-
-    with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO search_logs(term, country, created_at) VALUES(%s, %s, %s)",
-            (term or "", country or "", _now_iso()),
-        )
-
 # ------------------------- Helper Functions ----------------------------------
-
-def _tokens(text: str):
-    """Tokenize text for fuzzy matching."""
-    return [t for t in re.split(r"[^\w+]+", text.lower()) if t]
-
-def _fuzzy_match(needle: str, hay: str) -> bool:
-    """Very loose containment check for tokens (case insensitive).
-    - Matches if any token appears in hay.
-    - Empty needle matches everything.
-    """
-    if not needle:
-        return True
-    n_tokens = _tokens(needle)
-    if not n_tokens:
-        return True
-    hay_l = hay.lower()
-    return any(tok in hay_l for tok in n_tokens)
 
 # ------------------------- Normalization Functions ---------------------------
 
@@ -609,18 +398,6 @@ def normalize_country(q: str) -> str:
             return code
     return q.strip()
 
-def extract_country_code(loc: str, country_fallback: str = "") -> str:
-    """Try to extract country code from location string or fallback country."""
-    if loc:
-        parts = re.split(r"[^A-Za-z0-9]+", loc)
-        for token in reversed([p for p in parts if p]):
-            t = token.lower()
-            if t in COUNTRY_NORM:
-                return COUNTRY_NORM[t]
-            if len(t) == 2 and t.isalpha():
-                return t.upper()
-    return normalize_country(country_fallback)
-
 def normalize_title(q: str) -> str:
     """Normalize job title query."""
     if not q:
@@ -648,21 +425,6 @@ class Job:
         value = value.replace("%", r"\%")
         value = value.replace("_", r"\_")
         return value
-
-    @staticmethod
-    def exists() -> bool:
-        """Return True when the Jobs table is present."""
-        try:
-            db = get_db()
-            with db.cursor() as cur:
-                if is_sqlite_connection(db):
-                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Jobs'")
-                    return bool(cur.fetchone())
-                cur.execute("SELECT to_regclass('public.Jobs') IS NOT NULL")
-                row = cur.fetchone()
-                return bool(row and row[0])
-        except Exception:
-            return False
 
     @staticmethod
     def count(title: Optional[str] = None, country: Optional[str] = None) -> int:
@@ -742,7 +504,7 @@ class Job:
         try:
             value_param = int(value)
         except (TypeError, ValueError):
-            value_param = value
+            return None
 
         db = get_db()
         with db.cursor() as cur:
@@ -835,13 +597,6 @@ def parse_money_numbers(text: str):
         if clean.isdigit():
             nums.append(int(clean) * mult)
     return nums
-
-def parse_salary_range_from_text(text: str):
-    """Parse salary range from text."""
-    nums = parse_money_numbers(text)
-    if not nums:
-        return (None, None)
-    return (min(nums), max(nums) if len(nums) > 1 else None)
 
 def parse_salary_query(q: str):
     """Parse inline salary filters like '80k-120k', '>100k', '<=90k', '120k'."""

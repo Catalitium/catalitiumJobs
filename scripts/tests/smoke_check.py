@@ -58,16 +58,16 @@ def check_subscribe(client, app):
     rf = client.post("/subscribe", data={"email": "user@example.com"})
     assert rf.status_code in (301, 302, 303, 307, 308)
 
-    # Verify event logged
+    # Verify subscriber persisted
     from app.models.db import get_db
     with app.app_context():
         db = get_db()
         if app.config.get("DB_BACKEND") == "postgres":
             with db.cursor() as cur:
-                cur.execute("SELECT count(*) FROM subscribe_events")
+                cur.execute("SELECT count(*) FROM subscribers")
                 (cnt,) = cur.fetchone()
         else:
-            cur = db.execute("SELECT count(*) FROM subscribe_events")
+            cur = db.execute("SELECT count(*) FROM subscribers")
             row = cur.fetchone()
             cnt = row[0] if row else 0
     assert cnt >= 1

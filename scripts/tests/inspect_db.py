@@ -25,7 +25,7 @@ def topn(sql, n=10):
         return [('err', str(e))]
 
 stats = {}
-for t in ['Jobs','subscribers','search_events','job_view_events','subscribe_events']:
+for t in ['Jobs', 'subscribers']:
     stats[t] = safe_count(t)
 
 try:

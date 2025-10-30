@@ -13,17 +13,6 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="theme-color" content="#1a73e8" />
 
-  <!-- Google tag (GA4) with belos wrapper -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-N8G6ZYS32D"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function belos(){ dataLayer.push(arguments); }
-    // Keep GA compatibility: forward gtag calls to belos
-    window.gtag = function(){ belos.apply(null, arguments); };
-    belos('js', new Date());
-    belos('config', 'G-N8G6ZYS32D', { anonymize_ip: true });
-  </script>
-
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -31,35 +20,15 @@
       theme: { extend: { colors: { brand: '#1a73e8' } } }
     }
   </script>
-  <!-- Alpine.js for interactivity -->
-  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <!-- App styles -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
 
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2244%22 fill=%22%231a73e8%22/><text x=%2250%22 y=%2258%22 text-anchor=%22middle%22 font-size=%2250%22 fill=%22white%22 font-family=%22Arial,Helvetica,sans-serif%22>C</text></svg>">
 
-  <!-- Google Tag Manager -->
-  {% if gtm_container_id %}
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
-    (function(w,d,s,l,i){ w[l]=w[l]||[]; var f=d.getElementsByTagName(s)[0],
-      j=d.createElement(s), dl=l!='dataLayer'?'&l='+l:''; j.async=true;
-      j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl; f.parentNode.insertBefore(j,f);
-    })(window,document,'script','dataLayer','{{ gtm_container_id }}');
-  </script>
-  {% endif %}
-
-  
-
   {% block head_extra %}{% endblock %}
 </head>
 <body class="min-h-screen bg-white text-slate-800 antialiased">
-  {% if gtm_container_id %}
-  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id={{ gtm_container_id }}" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-  {% endif %}
-
   <!-- Compact Header (sticky for mobile) -->
   <header class="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70">
     <div class="mx-auto max-w-6xl px-3 sm:px-4 h-14 flex items-center justify-between">
@@ -71,14 +40,14 @@
         </svg></button>
 
       <!-- Center logo -->
-      <a href="{{ url_for('main.index') }}" class="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+      <a href="{{ url_for('index') }}" class="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
         <span class="inline-grid place-items-center w-8 h-8 rounded-full bg-brand text-white font-semibold">C</span>
         <span class="font-semibold tracking-tight">Catalitium</span>
       </a>
 
       <!-- Desktop nav (md+) -->
       <nav class="hidden md:flex items-center gap-2 text-sm">
-        <a href="{{ url_for('main.index') }}" class="px-3 py-2 rounded-lg hover:text-brand hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 motion-safe:transition-colors">Jobs</a>
+        <a href="{{ url_for('index') }}" class="px-3 py-2 rounded-lg hover:text-brand hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 motion-safe:transition-colors">Jobs</a>
         <a href="#" data-open-subscribe class="px-3 py-2 rounded-lg hover:text-brand hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 motion-safe:transition-colors">Newsletter</a>
       </nav>
     </div>
@@ -107,7 +76,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5" stroke-linecap="round"/></svg>
           <span>Search</span>
         </a>
-        <a href="{{ url_for('main.index') }}" class="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm hover:border-brand motion-safe:transition-colors motion-safe:transition-transform hover:shadow-sm active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
+        <a href="{{ url_for('index') }}" class="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm hover:border-brand motion-safe:transition-colors motion-safe:transition-transform hover:shadow-sm active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2 4 4L21 4l0 0"/></svg>
           <span>Jobs</span>
         </a>
@@ -118,7 +87,7 @@
       </div>
 
       <!-- Inline quick search -->
-      <form action="{{ url_for('main.index') }}" method="get" class="mt-3 px-1">
+      <form action="{{ url_for('index') }}" method="get" class="mt-3 px-1">
         <label for="navsearch" class="sr-only">Quick search</label>
         <div class="flex items-center gap-2">
           <input id="navsearch" name="title" type="search" inputmode="search" autocapitalize="none" spellcheck="false" autocomplete="off" placeholder="Search jobs..."
@@ -129,8 +98,8 @@
 
       <!-- Primary nav links -->
       <ul class="mt-3 space-y-1 text-base">
-        <li><a class="block rounded-lg px-3 py-3 hover:bg-slate-50 hover:text-brand" href="{{ url_for('main.index') }}">Home</a></li>
-        <li><a class="block rounded-lg px-3 py-3 hover:bg-slate-50 hover:text-brand" href="{{ url_for('main.index') }}">Jobs</a></li>
+        <li><a class="block rounded-lg px-3 py-3 hover:bg-slate-50 hover:text-brand" href="{{ url_for('index') }}">Home</a></li>
+        <li><a class="block rounded-lg px-3 py-3 hover:bg-slate-50 hover:text-brand" href="{{ url_for('index') }}">Jobs</a></li>
         <li><a class="block rounded-lg px-3 py-3 hover:bg-slate-50 hover:text-brand" href="#" data-open-subscribe>Newsletter</a></li>
       </ul>
     </div>
@@ -160,7 +129,7 @@
     <div class="mx-auto max-w-6xl px-4 py-6 text-xs sm:text-sm text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-3">
       <p> - {{ now().year if false else "" }} Catalitium - Empowering with Tech.</p>
       <div class="flex items-center gap-4">
-        <a href="{{ url_for('main.index') }}" class="hover:text-brand">Jobs</a>
+        <a href="{{ url_for('index') }}" class="hover:text-brand">Jobs</a>
         <a href="#" data-open-subscribe class="hover:text-brand">Newsletter</a>
       </div>
     </div>
@@ -171,16 +140,6 @@
       </div>
     </div>
   </footer>
-
-  <!-- Analytics -->
-  <script>
-    (function () {
-      window.dataLayer = window.dataLayer || [];
-      window.ctlEvent = function(name, params){ try { dataLayer.push(Object.assign({event:name}, params||{})); } catch(e){} };
-      var successFlash = document.querySelector('[class*="bg-emerald-50"]');
-      if (successFlash) window.dispatchEvent(new CustomEvent('newsletter:subscribed'));
-    })();
-  </script>
 
   <!-- Global Subscribe dialog -->
   <dialog id="subscribeDialog" class="rounded-2xl p-0 backdrop:bg-slate-900/40"
@@ -196,7 +155,7 @@
       </div>
       <p class="mt-2 text-slate-600 text-sm">One tidy email with new high-signal roles. Unsubscribe anytime.</p>
 
-      <form action="{{ url_for('main.subscribe') }}" method="post"
+      <form action="{{ url_for('subscribe') }}" method="post"
             class="mt-5 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
         <label for="subscribe-email" class="sr-only">Email</label>
         <input id="subscribe-email"
@@ -214,111 +173,25 @@
     </div>
   </dialog>
 
-  <!-- Global Job Application Modal (simple email validation) -->
-  <div x-data="{
-    show: false,
-    jobId: null,
-    jobTitle: '',
-    jobLink: '',
-    jobLocation: '',
-    jobCompany: '',
-    email: '',
-    submitting: false,
-    reset(){
-      this.email = '';
-      this.submitting = false;
-      this.jobId = null;
-      this.jobTitle = '';
-      this.jobLink = '';
-      this.jobLocation = '';
-      this.jobCompany = '';
-      var btn = this.$refs && this.$refs.submitBtn;
-      if(btn){
-        btn.disabled = false;
-        btn.innerText = btn.dataset.label || 'Continue';
-      }
-    },
-    submit(){
-      this.email = (this.email || '').trim();
-      if(!this.email || !/.+@.+\..+/.test(this.email)){
-        this.$refs.emailInput.focus();
-        return;
-      }
-      this.submitting = true;
-      var btn = this.$refs && this.$refs.submitBtn;
-      if(btn){
-        btn.disabled = true;
-        if(!btn.dataset.label){ btn.dataset.label = btn.innerText || 'Continue'; }
-        btn.innerText = 'Submitting...';
-      }
-      var target = this.jobLink || '';
-      if(!target){
-        this.submitting = false;
-        if(btn){
-          btn.disabled = false;
-          btn.innerText = btn.dataset.label || 'Continue';
-        }
-        alert('This job does not have an external apply link yet. Please try another listing.');
-        return;
-      }
-      try {
-        if (typeof window.logJobView === 'function') {
-          window.logJobView({
-            job_id: this.jobId || '',
-            job_title: this.jobTitle || '',
-            company: this.jobCompany || '',
-            location: this.jobLocation || ''
-          });
-        } else {
-          fetch('/events/job_view', {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({
-              job_id: this.jobId || '',
-              job_title: this.jobTitle || '',
-              company: this.jobCompany || '',
-              location: this.jobLocation || ''
-            }),
-            keepalive: true
-          }).catch(function(){});
-        }
-      } catch(_){}
-      this.show = false;
-      this.$refs.jobDialog.close();
-      var opened = null;
-      try {
-        opened = window.open(target, '_blank');
-        if(opened){ opened.opener = null; return; }
-      } catch(_){}
-      try {
-        window.location.assign(target);
-      } catch(_){
-        window.location.href = target;
-      }
-    }
-  }"
-       @open-job-modal.window="reset(); show = true; jobId = $event.detail.jobId; jobTitle = $event.detail.jobTitle; jobLink = $event.detail.jobLink || ''; jobLocation = $event.detail.jobLocation || ''; jobCompany = $event.detail.jobCompany || ''; email = ''; submitting = false"
-       x-show="show"
-       x-transition.opacity.duration.300ms
-       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40"
-       style="display: none;"
-  >
-    <dialog x-ref="jobDialog" :open="show" class="rounded-2xl p-0 bg-white shadow-xl w-[90vw] max-w-md"
-      @close="show = false">
-      <form @submit.prevent="submit()" class="p-6">
-        <h2 class="text-lg font-semibold mb-2">Apply for <span x-text="jobTitle"></span></h2>
-        <input type="hidden" name="job_id" :value="jobId">
+  <!-- Global Job Application Modal -->
+  <div id="jobModal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/40">
+    <dialog id="jobDialog" class="rounded-2xl p-0 bg-white shadow-xl w-[90vw] max-w-md">
+      <form id="jobModalForm" class="p-6">
+        <h2 class="text-lg font-semibold mb-2">
+          Apply for <span id="jobModalTitle"></span>
+        </h2>
+        <input type="hidden" name="job_id" id="jobModalJobId">
         <div class="mb-3">
-          <label class="block text-sm mb-1" for="app-email">Email</label>
-          <input id="app-email" name="email" type="email" required x-ref="emailInput" x-model="email"
+          <label class="block text-sm mb-1" for="jobModalEmail">Email</label>
+          <input id="jobModalEmail" name="email" type="email" required
                  placeholder="you@company.com"
                  class="w-full rounded-xl border border-slate-300 px-4 py-2 focus:ring-2 focus:ring-brand/50 focus:outline-none">
           <p class="text-[11px] text-slate-500 mt-1">We'll only use it to initiate the redirect.</p>
         </div>
         <div class="flex gap-2 mt-4">
-          <button type="submit" x-ref="submitBtn"
+          <button type="submit" id="jobModalSubmit"
                   class="rounded-xl bg-brand text-white px-5 py-2 hover:opacity-90 transition duration-300">Continue</button>
-          <button type="button" @click="$refs.jobDialog.close(); show = false;"
+          <button type="button" data-close-job-modal
                   class="rounded-xl border border-slate-300 px-5 py-2 text-slate-700 hover:bg-slate-100 transition duration-300">Cancel</button>
         </div>
       </form>

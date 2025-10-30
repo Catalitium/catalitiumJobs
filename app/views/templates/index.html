@@ -16,7 +16,7 @@
   <div class="mx-auto mt-6 max-w-4xl px-3 sm:px-0">
     <div class="sticky top-14 z-40 rounded-xl border border-slate-200 bg-white/95 backdrop-blur shadow-sm supports-[backdrop-filter]:bg-white/70 sm:static sm:border-transparent sm:bg-transparent sm:shadow-none">
       <form id="search"
-            action="{{ url_for('main.index') }}"
+            action="{{ url_for('index') }}"
             method="get"
             aria-label="Job search"
             role="search"
@@ -75,7 +75,7 @@
         {% if country_q %}
           <span class="rounded-full bg-slate-100 px-2 py-0.5 border border-slate-200">country: {{ country_q }}</span>
         {% endif %}
-        <a class="ml-2 underline hover:text-brand" href="{{ url_for('main.index') }}">Clear</a>
+        <a class="ml-2 underline hover:text-brand" href="{{ url_for('index') }}">Clear</a>
       {% endif %}
     </div>
 
@@ -104,14 +104,14 @@
     {# Title chips #}
     {% set t = (title_q or '') %}
     {% set c = (country_q or '') %}
-    <a href="{{ url_for('main.index', title=(t ~ ' remote').strip(), country=c) }}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'remote' in (t|lower) else '' }}">Remote</a>
-    <a href="{{ url_for('main.index', title=(t ~ ' senior').strip(), country=c) }}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'senior' in (t|lower) else '' }}">Senior</a>
-    <a href="{{ url_for('main.index', title=(t ~ ' ai').strip(), country=c) }}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'ai' in (t|lower) else '' }}">AI</a>
-    <a href="{{ url_for('main.index', title=(t ~ ' 100k').strip(), country=c) }}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if '100k' in (t|lower) else '' }}">>100k</a>
+    <a href="{{ url_for('index', title=(t ~ ' remote').strip(), country=c) }}" data-filter-chip="title" data-filter-value="remote" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'remote' in (t|lower) else '' }}">Remote</a>
+    <a href="{{ url_for('index', title=(t ~ ' senior').strip(), country=c) }}" data-filter-chip="title" data-filter-value="senior" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'senior' in (t|lower) else '' }}">Senior</a>
+    <a href="{{ url_for('index', title=(t ~ ' ai').strip(), country=c) }}" data-filter-chip="title" data-filter-value="ai" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'ai' in (t|lower) else '' }}">AI</a>
+    <a href="{{ url_for('index', title=(t ~ ' 100k').strip(), country=c) }}" data-filter-chip="title" data-filter-value=">100k" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if '100k' in (t|lower) else '' }}">>100k</a>
     {# Country chips #}
-    <a href="{{ url_for('main.index', title=t, country='US') }}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='US' else '' }}">US</a>
-    <a href="{{ url_for('main.index', title=t, country='DE') }}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='DE' else '' }}">DE</a>
-    <a href="{{ url_for('main.index', title=t, country='UK') }}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='UK' else '' }}">UK</a>
+    <a href="{{ url_for('index', title=t, country='US') }}" data-filter-chip="country" data-filter-value="US" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='US' else '' }}">US</a>
+    <a href="{{ url_for('index', title=t, country='DE') }}" data-filter-chip="country" data-filter-value="DE" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='DE' else '' }}">DE</a>
+    <a href="{{ url_for('index', title=t, country='UK') }}" data-filter-chip="country" data-filter-value="UK" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='UK' else '' }}">UK</a>
   </div>
   <div class="sr-only" aria-live="polite">Quick filters</div>
   </div>

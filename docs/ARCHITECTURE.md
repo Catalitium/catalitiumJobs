@@ -136,11 +136,10 @@ Optional:
 - `GTM_CONTAINER_ID` - Google Tag Manager ID
 - `ADMIN_TOKEN` - Token for admin access
 - `RATELIMIT_STORAGE_URL` - Rate limit storage (default: memory://)
-- `ANALYTICS_SALT` - Salt for hashing analytics data
 
 ## Database Schema
 
-Managed through Postgres migrations (Jobs, subscribers, search_events, job_view_events, subscribe_events).
+Managed through Postgres migrations (Jobs, subscribers).
 
 ## Caching Strategy
 

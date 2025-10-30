@@ -158,69 +158,105 @@
     };
   }
 
-  function logJobView(payload){
-    if(!payload) return;
-    try {
-      var jobId = (payload.job_id || '').trim();
-      var jobTitle = (payload.job_title || '').trim();
-      var company = (payload.company || '').trim();
-      var location = (payload.location || '').trim();
-      if (!jobId && !jobTitle && !company && !location) return;
-      var body = JSON.stringify({
-        job_id: jobId,
-        job_title: jobTitle,
-        company: company,
-        location: location
-      });
-      if (navigator.sendBeacon) {
-        var blob = new Blob([body], {type:'application/json'});
-        navigator.sendBeacon('/events/job_view', blob);
-      } else {
-        fetch('/events/job_view', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: body,
-          keepalive:true
-        }).catch(function(){});
-      }
-    } catch(_){}
-  }
-  try { window.logJobView = logJobView; } catch(_) {}
   try { window.jobPayloadFromCard = jobPayloadFromCard; } catch(_) {}
+})();
 
-  // ------------------------------------------------------------------
-  // Analytics (privacy-friendly)
-  // ------------------------------------------------------------------
-  function beacon(path, data){
-    try {
-      var b = new Blob([JSON.stringify(data||{})], {type:'application/json'});
-      if (navigator.sendBeacon) { navigator.sendBeacon(path, b); return; }
-      fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data||{}), keepalive:true});
-    } catch(_){}
+// --------------------------------------------------------------------
+// Job modal (vanilla JS controller)
+// --------------------------------------------------------------------
+(function(){
+  var wrap = document.getElementById('jobModal');
+  var dialog = document.getElementById('jobDialog');
+  var form = document.getElementById('jobModalForm');
+  var emailInput = document.getElementById('jobModalEmail');
+  var jobIdField = document.getElementById('jobModalJobId');
+  var titleSpan = document.getElementById('jobModalTitle');
+  var cancelBtn = document.querySelector('[data-close-job-modal]');
+  if (!wrap || !dialog || !form || !emailInput || !jobIdField || !titleSpan) {
+    return;
   }
-  // Expose for other modules on the page
-  try { window.beacon = beacon; } catch(_) {}
-  document.addEventListener('click', function(e){
-    var a = e.target.closest('a');
-    if(a && a.textContent && a.textContent.trim().startsWith('Easy Apply')){
-      logJobView(jobPayloadFromCard(a.closest('[data-job-id]'), a));
+
+  var jobDetail = {
+    jobLink: '',
+    jobId: '',
+    jobTitle: '',
+    jobCompany: '',
+    jobLocation: ''
+  };
+
+  function hideModal() {
+    try { dialog.close(); } catch(_) { dialog.removeAttribute('open'); }
+    wrap.classList.add('hidden');
+  }
+
+  function showModal() {
+    wrap.classList.remove('hidden');
+    try { dialog.showModal(); } catch(_) { dialog.setAttribute('open', 'true'); }
+    setTimeout(function(){
+      try { emailInput.focus(); } catch(_){}
+    }, 0);
+  }
+
+  window.addEventListener('open-job-modal', function(evt){
+    var detail = evt && evt.detail ? evt.detail : {};
+    jobDetail.jobLink = detail.jobLink || '';
+    jobDetail.jobId = detail.jobId || '';
+    jobDetail.jobTitle = detail.jobTitle || '';
+    jobDetail.jobCompany = detail.jobCompany || '';
+    jobDetail.jobLocation = detail.jobLocation || '';
+    jobIdField.value = jobDetail.jobId;
+    titleSpan.textContent = jobDetail.jobTitle || 'this role';
+    emailInput.value = '';
+    showModal();
+  });
+
+  wrap.addEventListener('click', function(e){
+    if (e.target === wrap) {
+      hideModal();
     }
-    var btn = e.target.closest('[data-apply]');
-    if(btn){
-      logJobView(jobPayloadFromCard(btn.closest('[data-job-id]'), btn));
-    }
-    var sub = e.target.closest('[data-open-subscribe]');
-    if(sub){ beacon('/events/log', {type:'subscribe', payload:{ status:'clicked', ts: Date.now() }}); }
-  }, true);
-  var form = document.getElementById('search');
-  if(form){
-    form.addEventListener('submit', function(){
-      var title = (form.querySelector('[name="title"]').value||'').trim();
-      var country = (form.querySelector('[name="country"]').value||'').trim();
-      var rc = parseInt(form.getAttribute('data-results-count')||'0',10)||0;
-      beacon('/events/log', {type:'search', payload:{ raw_title:title, raw_country:country, result_count:rc, page:1, per_page:form.getAttribute('data-per-page')||10 }});
+  });
+
+  dialog.addEventListener('cancel', function(e){
+    e.preventDefault();
+    hideModal();
+  });
+
+  dialog.addEventListener('close', function(){
+    wrap.classList.add('hidden');
+  });
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function(){
+      hideModal();
     });
   }
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var email = (emailInput.value || '').trim();
+    if (!/.+@.+\..+/.test(email)) {
+      emailInput.focus();
+      return;
+    }
+    hideModal();
+    var target = jobDetail.jobLink || '';
+    if (!target) {
+      alert('This job does not have an external apply link yet. Please try another listing.');
+      return;
+    }
+    try {
+      var opened = window.open(target, '_blank');
+      if (opened) {
+        opened.opener = null;
+        return;
+      }
+    } catch(_){}
+    try {
+      window.location.assign(target);
+    } catch(_){
+      window.location.href = target;
+    }
+  });
 })();
 
 
@@ -240,38 +276,7 @@
   if(form){ form.addEventListener('submit', function(){ if(q) q.value = normTitle(q.value); if(loc) loc.value = normCountry(loc.value); }); }
   if(toggle && subDlg){ toggle.addEventListener('change', function(){ if(toggle.checked){ try{subDlg.showModal();}catch(_) {subDlg.open=true;} var em=document.getElementById('subscribe-email'); if(em) em.focus(); }}); subDlg.addEventListener('close', function(){ toggle.checked=false; }); }
   // Log subscribe dialog native form submission (newsletter)
-  var subscribeForm = document.querySelector('#subscribeDialog form[action*="/subscribe"]');
-  if (subscribeForm) {
-    subscribeForm.addEventListener('submit', function(){
-      var em = document.getElementById('subscribe-email');
-      var email = (em && em.value || '').trim();
-      (window.beacon||function(){})('/events/log', { type:'subscribe', payload:{ status:'submitted', email: email }});
-    });
   }
-  // Log details open as a job view (native <details>)
-  document.querySelectorAll('article[data-job-id] details').forEach(function(det){
-    det.addEventListener('toggle', function(){
-      if(!det.open) return;
-      var card = det.closest('article[data-job-id]');
-      if(!card) return;
-      try {
-        var payloadFn = (window.jobPayloadFromCard || function(){ return null; });
-        var payload = payloadFn(card);
-        if(payload){
-          if (typeof window.logJobView === 'function') {
-            window.logJobView(payload);
-          } else {
-            fetch('/events/job_view', {
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body: JSON.stringify(payload),
-              keepalive:true
-            }).catch(function(){});
-          }
-        }
-      } catch(_) {}
-    });
-  });
 })();
 
 // Inline script from index.html externalized (kept order and behavior)
@@ -282,17 +287,6 @@
     var loc = document.getElementById('loc');
     if (form) {
       form.addEventListener('submit', function(){
-        // Dispatch GTM-friendly custom event (preserves prior behavior)
-        try {
-          window.dispatchEvent(new CustomEvent('jobs:search', {
-            detail: {
-              search_term: q && q.value,
-              country: loc && loc.value,
-              results_count: Number(form.dataset.resultsCount||0),
-              source: 'form'
-            }
-          }));
-        } catch(_) {}
         // Show skeletons during navigation
         try {
           var sk = document.getElementById('results-skeletons');
@@ -335,14 +329,46 @@
         btn.setAttribute('aria-expanded', expanded);
         if (expanded && !opened) {
           opened = true;
-          try {
-            var payload = window.jobPayloadFromCard ? window.jobPayloadFromCard(art) : null;
-            if (payload && typeof window.logJobView === 'function') {
-              window.logJobView(payload);
-            }
-          } catch(_) {}
         }
       });
     });
   } catch(e) {}
+})();
+
+
+// --------------------------------------------------------------------
+// Auto-open job details on scroll
+// --------------------------------------------------------------------
+(function(){
+  if (!('IntersectionObserver' in window)) return;
+  var cards = document.querySelectorAll('article[data-job-id]');
+  if (!cards.length) return;
+  var userScrolled = false;
+  var opened = new WeakSet();
+
+  window.addEventListener('scroll', function onScroll(){
+    userScrolled = true;
+    window.removeEventListener('scroll', onScroll);
+  }, { passive: true });
+
+  var observer = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if (!entry.isIntersecting) return;
+      if (!userScrolled) return;
+      var card = entry.target;
+      var details = card.querySelector('details');
+      if (!details || details.open) return;
+      if (opened.has(details)) return;
+      opened.add(details);
+      try { details.open = true; } catch(_) {}
+    });
+  }, { threshold: 0.6 });
+
+  cards.forEach(function(card, idx){
+    if (idx === 0) {
+      // Keep first card collapsed until user interacts.
+      return observer.observe(card);
+    }
+    observer.observe(card);
+  });
 })();
