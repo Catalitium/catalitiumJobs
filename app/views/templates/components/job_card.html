@@ -1,0 +1,84 @@
+{# Job Card Partial (clean, DB-first, ASCII-safe) #}
+{% set CUR = {'EUR':'&euro;','USD':'$','GBP':'&pound;','CHF':'CHF'} %}
+<article
+  class="rounded-xl border border-slate-200 p-3 sm:p-4 hover:border-slate-300 transition-colors motion-safe:transition-transform motion-safe:duration-150 hover:shadow-md hover:-translate-y-[1px] active:translate-y-px"
+  data-job-id="{{ j.id }}"
+  data-job-title="{{ (j.title or '')|e }}"
+  data-job-company="{{ (j.company or '')|e }}"
+  data-job-location="{{ (j.location or 'Remote / Anywhere')|e }}"
+>
+  <header class="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-3">
+    <div class="min-w-0">
+      <h2 class="text-base sm:text-lg font-semibold leading-tight clamp-2 sm:clamp-1 break-words">{{ j.title }}</h2>
+      <p class="text-slate-600 text-xs sm:text-sm mt-0.5 truncate" data-job-meta="true">
+        {% if j.company %}{{ j.company }} - {% endif %}{{ j.location or 'Remote / Anywhere' }}{% if j.date_posted %} • {{ j.date_posted }}{% endif %}
+      </p>
+      {% if loop.index == 1 and j.summary %}
+      <div class="mt-2 text-slate-700 text-sm bg-slate-50 rounded-lg p-2 sm:p-3 border border-slate-200">
+        <strong>Summary:</strong> {{ j.summary }}
+      </div>
+      {% endif %}
+    </div>
+  </header>
+
+  <!-- Salary / Reference (optional) -->
+  <div class="mt-2 text-xs sm:text-sm text-slate-600 flex items-center gap-2 sm:gap-3 flex-wrap">
+    {% if j.salary_min or j.salary_max %}
+      {% set offer_min = j.salary_min or j.salary_max %}
+      {% set offer_max = j.salary_max or j.salary_min %}
+      <span aria-label="Offered salary">
+        {{ '{:,}'.format(offer_min) }}{% if j.salary_max %}-{{ '{:,}'.format(offer_max) }}{% endif %}
+      </span>
+    {% endif %}
+  </div>
+
+  <!-- Details (native details/summary for reliability) -->
+  <details id="details-{{ j.id }}" class="mt-2 group">
+    <summary aria-controls="details-{{ j.id }}" class="list-none inline-flex items-center gap-1 text-[13px] sm:text-[12px] underline cursor-pointer hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 px-2 py-1 rounded-lg select-none">
+      <span>More details</span>
+      <svg class="w-3 h-3 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
+    </summary>
+    <div class="mt-2">
+      <p class="text-sm sm:text-base text-slate-700 whitespace-pre-line">{{ j.description }}</p>
+    </div>
+  </details>
+
+  <!-- Actions -->
+  <div class="mt-4 flex flex-col sm:flex-row gap-2">
+    {% if card_index and card_index <= 2 %}
+      {% if j.link %}
+        <a
+          href="{{ j.link }}"
+          target="_blank"
+          rel="noopener"
+          data-title="{{ (j.title or '')|e }}"
+          data-company="{{ (j.company or '')|e }}"
+          data-location="{{ (j.location or 'Remote / Anywhere')|e }}"
+          class="inline-block rounded-lg bg-blue-600 text-white px-4 py-2 sm:px-5 sm:py-2 text-sm sm:text-base font-semibold shadow hover:bg-blue-700 transition duration-200 active:translate-y-px w-full sm:w-auto text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        >
+          Easy Apply
+        </a>
+      {% else %}
+        <button
+          type="button"
+          class="inline-block rounded-lg bg-blue-600 text-white px-4 py-2 sm:px-5 sm:py-2 text-sm sm:text-base font-semibold shadow hover:bg-blue-700 transition duration-200 active:translate-y-px w-full sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+          onclick="alert('No link available for this job yet')"
+        >
+          Easy Apply
+        </button>
+      {% endif %}
+    {% else %}
+      <button
+        type="button"
+        class="inline-block rounded-lg bg-brand text-white px-4 py-2 sm:px-5 sm:py-2 text-sm sm:text-base font-semibold shadow hover:bg-brand/90 transition duration-200 active:translate-y-px w-full sm:w-auto min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        data-apply
+        data-title="{{ (j.title or '')|e }}"
+        data-link="{{ (j.link or '')|e }}"
+        data-company="{{ (j.company or '')|e }}"
+        data-location="{{ (j.location or 'Remote / Anywhere')|e }}"
+      >
+        Apply
+      </button>
+    {% endif %}
+  </div>
+</article>
