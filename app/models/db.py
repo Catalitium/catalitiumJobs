@@ -4,6 +4,8 @@ import os
 import re
 import logging
 import sqlite3
+import hashlib
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -13,6 +15,11 @@ try:
     import psycopg  # psycopg v3
 except Exception:
     psycopg = None  # optional, only required when SUPABASE_URL is set
+
+try:
+    from psycopg.errors import UniqueViolation  # type: ignore[attr-defined]
+except Exception:
+    UniqueViolation = None  # type: ignore[assignment]
 
 try:
     from dotenv import load_dotenv
@@ -56,6 +63,8 @@ SUPABASE_URL = _normalize_pg_url(_SUPABASE_RAW)
 SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 PER_PAGE_MAX = 100  # safety cap
 RATELIMIT_STORAGE_URL = os.getenv("RATELIMIT_STORAGE_URL", "memory://")
+ANALYTICS_SALT = os.getenv("ANALYTICS_SALT", "dev")
+ANALYTICS_SESSION_COOKIE = os.getenv("ANALYTICS_SESSION_COOKIE", "sid")
 
 # ------------------------- Logging -------------------------------------------
 logging.basicConfig(
@@ -168,8 +177,44 @@ def close_db(_e=None):
 
 # ------------------------- Subscriber & Analytics Helpers --------------------
 
+def _is_unique_violation(exc: Exception) -> bool:
+    if isinstance(exc, sqlite3.IntegrityError):
+        return True
+    if UniqueViolation is not None and isinstance(exc, UniqueViolation):
+        return True
+    return False
+
+def _hash(value: str) -> str:
+    salted = (ANALYTICS_SALT or "dev").encode("utf-8")
+    return hashlib.sha256(salted + (value or "").encode("utf-8")).hexdigest()
+
+def _ensure_session_id() -> str:
+    try:
+        from flask import g, request
+    except RuntimeError:
+        return ""
+    cookie_name = ANALYTICS_SESSION_COOKIE or "sid"
+    sid = request.cookies.get(cookie_name)
+    if sid:
+        return sid
+    sid = uuid.uuid4().hex
+    setattr(g, "_analytics_sid_new", (cookie_name, sid))
+    return sid
+
+def _client_meta() -> Tuple[str, str, str, str]:
+    try:
+        from flask import request
+    except RuntimeError:
+        return ("", "", "", "")
+    ua = (request.headers.get("User-Agent") or "")[:300]
+    ref = (request.headers.get("Referer") or "")[:300]
+    xff = request.headers.get("X-Forwarded-For", "") or ""
+    ip = xff.split(",")[0].strip() if xff else (request.remote_addr or "")
+    sid = request.cookies.get(ANALYTICS_SESSION_COOKIE or "sid") or _ensure_session_id() or ""
+    return (ua, ref, _hash(ip), sid)
+
 def insert_subscriber(email: str) -> str:
-    """Insert a subscriber record; return 'ok' or 'duplicate'."""
+    """Insert a subscriber record; return 'ok', 'duplicate', or 'error'."""
     db = get_db()
     try:
         with db.cursor() as cur:
@@ -178,8 +223,46 @@ def insert_subscriber(email: str) -> str:
                 (email, _now_iso()),
             )
         return "ok"
-    except Exception:
-        return "duplicate"
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return "duplicate"
+        logger.warning("insert_subscriber failed: %s", exc, exc_info=True)
+        return "error"
+
+def insert_subscribe_event(email: str, status: str, *, source: str = "form") -> None:
+    """Persist a newsletter subscribe analytics event (best effort)."""
+    db = get_db()
+    created_at = _now_iso()
+    ua, ref, ip_hash, sid = _client_meta()
+    payload = (
+        created_at,
+        _hash(email or ""),
+        (status or "").strip(),
+        ua,
+        ref,
+        ip_hash,
+        sid,
+        (source or "form")[:50],
+    )
+    try:
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO subscribe_events(
+                    created_at,
+                    email_hash,
+                    status,
+                    user_agent,
+                    referer,
+                    ip_hash,
+                    session_id,
+                    source
+                ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
+                """,
+                payload,
+            )
+    except Exception as exc:
+        logger.debug("subscribe analytics skipped: %s", exc)
 
 
 def insert_search_event(
@@ -188,21 +271,32 @@ def insert_search_event(
     raw_country: str,
     norm_title: str,
     norm_country: str,
+    sal_floor: Optional[int],
+    sal_ceiling: Optional[int],
     result_count: int,
     page: int,
     per_page: int,
+    source: str = "server",
 ) -> None:
     """Persist a lightweight search log for analytics."""
     db = get_db()
+    ua, ref, ip_hash, sid = _client_meta()
     payload = (
         _now_iso(),
         (raw_title or "").strip(),
         (raw_country or "").strip(),
         (norm_title or "").strip(),
         (norm_country or "").strip(),
+        int(sal_floor) if sal_floor is not None else None,
+        int(sal_ceiling) if sal_ceiling is not None else None,
         int(result_count),
         int(page),
         int(per_page),
+        ua,
+        ref,
+        ip_hash,
+        sid,
+        (source or "server")[:50],
     )
     try:
         with db.cursor() as cur:
@@ -214,16 +308,23 @@ def insert_search_event(
                     raw_country,
                     norm_title,
                     norm_country,
+                    sal_floor,
+                    sal_ceiling,
                     result_count,
                     page,
-                    per_page
-                ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
+                    per_page,
+                    user_agent,
+                    referer,
+                    ip_hash,
+                    session_id,
+                    source
+                ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 payload,
             )
-    except Exception:
+    except Exception as exc:
         # Swallow logging errors so search flow remains unaffected
-        pass
+        logger.debug("search analytics skipped: %s", exc)
 
 # ------------------------- Description Parsing ------------------------------
 
@@ -272,6 +373,28 @@ def parse_job_description(text: str) -> str:
     t = clean_job_description_text(text or "")
     return summarize_two_sentences(t)
 
+def _ensure_sqlite_columns(db, table: str, definitions: Dict[str, str]) -> None:
+    try:
+        rows = db.execute(f"PRAGMA table_info('{table}')").fetchall()
+    except Exception as exc:
+        logger.debug("Unable to inspect %s columns: %s", table, exc)
+        return
+    existing = {row[1] for row in rows}
+    for column, ddl in definitions.items():
+        if column not in existing:
+            try:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+            except Exception as exc:
+                logger.debug("Unable to add %s to %s: %s", column, table, exc)
+
+def _ensure_postgres_columns(db, table: str, definitions: Dict[str, str]) -> None:
+    try:
+        with db.cursor() as cur:
+            for column, ddl in definitions.items():
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {ddl}")
+    except Exception as exc:
+        logger.debug("Unable to ensure columns for %s: %s", table, exc)
+
 def init_db():
     """Ensure required tables exist in the primary Postgres database."""
     db = get_db()
@@ -289,9 +412,27 @@ def init_db():
                 raw_country TEXT,
                 norm_title TEXT,
                 norm_country TEXT,
+                sal_floor INTEGER,
+                sal_ceiling INTEGER,
                 result_count INTEGER,
                 page INTEGER,
-                per_page INTEGER
+                per_page INTEGER,
+                user_agent TEXT,
+                referer TEXT,
+                ip_hash TEXT,
+                session_id TEXT,
+                source TEXT DEFAULT 'server'
+            );
+            CREATE TABLE IF NOT EXISTS subscribe_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT,
+                email_hash TEXT,
+                status TEXT,
+                user_agent TEXT,
+                referer TEXT,
+                ip_hash TEXT,
+                session_id TEXT,
+                source TEXT DEFAULT 'form'
             );
             CREATE TABLE IF NOT EXISTS Jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -307,7 +448,32 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_jobs_title_norm ON Jobs(job_title_norm);
             CREATE INDEX IF NOT EXISTS idx_jobs_location ON Jobs(location);
             CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at);
+            CREATE INDEX IF NOT EXISTS idx_subscribe_events_created ON subscribe_events(created_at);
             """
+        )
+        _ensure_sqlite_columns(
+            db,
+            "search_events",
+            {
+                "sal_floor": "sal_floor INTEGER",
+                "sal_ceiling": "sal_ceiling INTEGER",
+                "user_agent": "user_agent TEXT",
+                "referer": "referer TEXT",
+                "ip_hash": "ip_hash TEXT",
+                "session_id": "session_id TEXT",
+                "source": "source TEXT DEFAULT 'server'",
+            },
+        )
+        _ensure_sqlite_columns(
+            db,
+            "subscribe_events",
+            {
+                "user_agent": "user_agent TEXT",
+                "referer": "referer TEXT",
+                "ip_hash": "ip_hash TEXT",
+                "session_id": "session_id TEXT",
+                "source": "source TEXT DEFAULT 'form'",
+            },
         )
         db.commit()
         return
@@ -329,11 +495,34 @@ def init_db():
                 raw_country TEXT NULL,
                 norm_title TEXT NULL,
                 norm_country TEXT NULL,
+                sal_floor INTEGER NULL,
+                sal_ceiling INTEGER NULL,
                 result_count INTEGER,
                 page INTEGER,
-                per_page INTEGER
+                per_page INTEGER,
+                user_agent TEXT NULL,
+                referer TEXT NULL,
+                ip_hash TEXT NULL,
+                session_id TEXT NULL,
+                source TEXT DEFAULT 'server'
             );
             CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at);
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS subscribe_events (
+                id SERIAL PRIMARY KEY,
+                created_at TIMESTAMP,
+                email_hash TEXT,
+                status TEXT,
+                user_agent TEXT,
+                referer TEXT,
+                ip_hash TEXT,
+                session_id TEXT,
+                source TEXT DEFAULT 'form'
+            );
+            CREATE INDEX IF NOT EXISTS idx_subscribe_events_created ON subscribe_events(created_at);
             """
         )
         cur.execute(
@@ -353,6 +542,30 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_jobs_location ON Jobs(location);
             """
         )
+    _ensure_postgres_columns(
+        db,
+        "search_events",
+        {
+            "sal_floor": "sal_floor INTEGER",
+            "sal_ceiling": "sal_ceiling INTEGER",
+            "user_agent": "user_agent TEXT",
+            "referer": "referer TEXT",
+            "ip_hash": "ip_hash TEXT",
+            "session_id": "session_id TEXT",
+            "source": "source TEXT DEFAULT 'server'",
+        },
+    )
+    _ensure_postgres_columns(
+        db,
+        "subscribe_events",
+        {
+            "user_agent": "user_agent TEXT",
+            "referer": "referer TEXT",
+            "ip_hash": "ip_hash TEXT",
+            "session_id": "session_id TEXT",
+            "source": "source TEXT DEFAULT 'form'",
+        },
+    )
 # ------------------------- Analytics Helpers ---------------------------------
 
 def _now_iso():

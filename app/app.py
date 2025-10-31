@@ -11,6 +11,7 @@ from flask import (
     url_for,
     flash,
     jsonify,
+    g,
 )
 from email_validator import validate_email, EmailNotValidError
 from flask_limiter import Limiter
@@ -33,6 +34,7 @@ from .models.db import (
     clean_job_description_text,
     insert_subscriber,
     insert_search_event,
+    insert_subscribe_event,
     Job,
 )
 
@@ -76,6 +78,22 @@ def create_app():
     limiter.init_app(app)
     app.teardown_appcontext(close_db)
 
+    @app.after_request
+    def apply_analytics_cookie(response):
+        sid_info = getattr(g, "_analytics_sid_new", None)
+        if sid_info:
+            cookie_name, sid = sid_info
+            secure_cookie = env == "production"
+            response.set_cookie(
+                cookie_name,
+                sid,
+                max_age=31536000,
+                httponly=True,
+                samesite="Lax",
+                secure=secure_cookie,
+            )
+        return response
+
     if not SECRET_KEY or SECRET_KEY == "dev-insecure-change-me":
         logger.error("SECRET_KEY must be set via environment. Aborting.")
         raise SystemExit(1)
@@ -106,7 +124,7 @@ def create_app():
         per_page_req = max(10, min(per_page_req, int(app.config.get("PER_PAGE_MAX", 100))))
         per_page = per_page_req
 
-        cleaned_title, _, _ = parse_salary_query(raw_title)
+        cleaned_title, sal_floor, sal_ceiling = parse_salary_query(raw_title)
         title_q = normalize_title(cleaned_title)
         country_q = normalize_country(raw_country)
 
@@ -125,9 +143,12 @@ def create_app():
                         raw_country=raw_country,
                         norm_title=title_q,
                         norm_country=country_q,
+                        sal_floor=sal_floor,
+                        sal_ceiling=sal_ceiling,
                         result_count=total,
                         page=max(1, page),
                         per_page=per_page,
+                        source="web",
                     )
                 except Exception:
                     pass
@@ -325,22 +346,39 @@ def create_app():
 
         job_link = Job.get_link(job_id_raw)
         status = insert_subscriber(email)
+        source = "api" if is_json else "form"
+        if job_link:
+            source = f"{source}_job"
+        insert_subscribe_event(email=email, status=status, source=source)
 
         if job_link:
+            if status == "error":
+                if is_json:
+                    return jsonify({"error": "subscribe_failed"}), 500
+                flash("We couldn't process your email. Please try again later.", "error")
+                return redirect(url_for("index"))
             if is_json:
-                body = {"status": "ok", "redirect": job_link}
+                body = {"status": status, "redirect": job_link}
                 return jsonify(body), 200
+            if status == "ok":
+                flash("You're subscribed! You're all set.", "success")
+            elif status == "duplicate":
+                flash("You're already on the list.", "success")
             return redirect(job_link)
 
         if is_json:
             if status == "ok":
                 return jsonify({"status": "ok"}), 200
-            return jsonify({"error": "duplicate"}), 200
+            if status == "duplicate":
+                return jsonify({"error": "duplicate"}), 200
+            return jsonify({"error": "subscribe_failed"}), 500
 
         if status == "ok":
             flash("You're subscribed! You're all set.", "success")
-        else:
+        elif status == "duplicate":
             flash("You're already on the list.", "success")
+        else:
+            flash("We couldn't process your email. Please try again later.", "error")
         return redirect(url_for("index"))
 
     @app.get("/api/salary-insights")
