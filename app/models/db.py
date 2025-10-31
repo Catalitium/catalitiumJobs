@@ -277,16 +277,35 @@ def insert_search_event(
     page: int,
     per_page: int,
     source: str = "server",
+    event_type: str = "search",
+    event_status: Optional[str] = None,
+    job_id: Optional[str] = None,
+    job_title: Optional[str] = None,
+    job_company: Optional[str] = None,
+    job_location: Optional[str] = None,
+    job_link: Optional[str] = None,
+    job_summary: Optional[str] = None,
 ) -> None:
     """Persist a lightweight search log for analytics."""
     db = get_db()
     ua, ref, ip_hash, sid = _client_meta()
+    safe_raw_title = (raw_title or job_title or "").strip()
+    safe_raw_country = (raw_country or job_location or "").strip()
+    safe_norm_title = (norm_title or "").strip()
+    safe_norm_country = (norm_country or "").strip()
+    safe_job_title = (job_title or "").strip()
+    safe_job_company = (job_company or "").strip()
+    safe_job_location = (job_location or "").strip()
+    safe_job_link = (job_link or "").strip()
+    safe_job_summary = (job_summary or "").strip()
+    safe_event_type = (event_type or "search").strip() or "search"
+    safe_event_status = (event_status or ("ok" if safe_event_type == "search" else "")).strip()
     payload = (
         _now_iso(),
-        (raw_title or "").strip(),
-        (raw_country or "").strip(),
-        (norm_title or "").strip(),
-        (norm_country or "").strip(),
+        safe_raw_title or "N/A",
+        safe_raw_country or "N/A",
+        safe_norm_title or ("apply" if safe_event_type == "apply" else ""),
+        safe_norm_country or "",
         int(sal_floor) if sal_floor is not None else None,
         int(sal_ceiling) if sal_ceiling is not None else None,
         int(result_count),
@@ -297,6 +316,14 @@ def insert_search_event(
         ip_hash,
         sid,
         (source or "server")[:50],
+        safe_event_status[:50] if safe_event_status else "",
+        safe_event_type[:20],
+        (job_id or "").strip()[:160],
+        safe_job_title[:300],
+        safe_job_company[:200],
+        safe_job_location[:200],
+        safe_job_link[:500],
+        safe_job_summary[:400],
     )
     try:
         with db.cursor() as cur:
@@ -317,8 +344,19 @@ def insert_search_event(
                     referer,
                     ip_hash,
                     session_id,
-                    source
-                ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    source,
+                    event_status,
+                    event_type,
+                    job_id,
+                    job_title_event,
+                    job_company_event,
+                    job_location_event,
+                    job_link_event,
+                    job_summary_event
+                ) VALUES(
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                )
                 """,
                 payload,
             )
@@ -421,7 +459,15 @@ def init_db():
                 referer TEXT,
                 ip_hash TEXT,
                 session_id TEXT,
-                source TEXT DEFAULT 'server'
+                source TEXT DEFAULT 'server',
+                event_status TEXT,
+                event_type TEXT DEFAULT 'search',
+                job_id TEXT,
+                job_title_event TEXT,
+                job_company_event TEXT,
+                job_location_event TEXT,
+                job_link_event TEXT,
+                job_summary_event TEXT
             );
             CREATE TABLE IF NOT EXISTS subscribe_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -462,6 +508,14 @@ def init_db():
                 "ip_hash": "ip_hash TEXT",
                 "session_id": "session_id TEXT",
                 "source": "source TEXT DEFAULT 'server'",
+                "event_status": "event_status TEXT",
+                "event_type": "event_type TEXT DEFAULT 'search'",
+                "job_id": "job_id TEXT",
+                "job_title_event": "job_title_event TEXT",
+                "job_company_event": "job_company_event TEXT",
+                "job_location_event": "job_location_event TEXT",
+                "job_link_event": "job_link_event TEXT",
+                "job_summary_event": "job_summary_event TEXT",
             },
         )
         _ensure_sqlite_columns(
@@ -504,7 +558,15 @@ def init_db():
                 referer TEXT NULL,
                 ip_hash TEXT NULL,
                 session_id TEXT NULL,
-                source TEXT DEFAULT 'server'
+                source TEXT DEFAULT 'server',
+                event_status TEXT,
+                event_type TEXT DEFAULT 'search',
+                job_id TEXT,
+                job_title_event TEXT,
+                job_company_event TEXT,
+                job_location_event TEXT,
+                job_link_event TEXT,
+                job_summary_event TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at);
             """
@@ -553,6 +615,13 @@ def init_db():
             "ip_hash": "ip_hash TEXT",
             "session_id": "session_id TEXT",
             "source": "source TEXT DEFAULT 'server'",
+            "event_type": "event_type TEXT DEFAULT 'search'",
+            "job_id": "job_id TEXT",
+            "job_title_event": "job_title_event TEXT",
+            "job_company_event": "job_company_event TEXT",
+            "job_location_event": "job_location_event TEXT",
+            "job_link_event": "job_link_event TEXT",
+            "job_summary_event": "job_summary_event TEXT",
         },
     )
     _ensure_postgres_columns(

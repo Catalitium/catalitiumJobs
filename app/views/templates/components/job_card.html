@@ -6,6 +6,7 @@
   data-job-title="{{ (j.title or '')|e }}"
   data-job-company="{{ (j.company or '')|e }}"
   data-job-location="{{ (j.location or 'Remote / Anywhere')|e }}"
+  data-job-summary="{{ (j.description or '')|replace('\n', ' ')|truncate(200, True)|e }}"
 >
   <header class="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-3">
     <div class="min-w-0">
@@ -79,6 +80,7 @@
         data-link="{{ (j.link or '')|e }}"
         data-company="{{ (j.company or '')|e }}"
         data-location="{{ (j.location or 'Remote / Anywhere')|e }}"
+        data-description="{{ (j.description or '')|replace('\n', ' ')|truncate(200, True)|e }}"
       >
         Apply
       </button>

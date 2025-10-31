@@ -381,6 +381,40 @@ def create_app():
             flash("We couldn't process your email. Please try again later.", "error")
         return redirect(url_for("index"))
 
+    @app.post("/events/apply")
+    @limiter.limit("30/minute;300/hour")
+    def events_apply():
+        payload = request.get_json(silent=True) or {}
+        status = (payload.get("status") or "").strip() or "unknown"
+        job_id = (payload.get("job_id") or payload.get("jobId") or "").strip()
+        job_title = (payload.get("job_title") or payload.get("jobTitle") or "").strip()
+        job_company = (payload.get("job_company") or payload.get("jobCompany") or "").strip()
+        job_location = (payload.get("job_location") or payload.get("jobLocation") or "").strip()
+        job_link = (payload.get("job_link") or payload.get("jobLink") or "").strip()
+        job_summary = (payload.get("job_summary") or payload.get("jobSummary") or "").strip()
+        source = (payload.get("source") or "web").strip() or "web"
+        insert_search_event(
+            raw_title=job_title or "N/A",
+            raw_country=job_location or "N/A",
+            norm_title="",
+            norm_country="",
+            sal_floor=None,
+            sal_ceiling=None,
+            result_count=0,
+            page=0,
+            per_page=0,
+            source=source,
+            event_type="apply",
+            event_status=status,
+            job_id=job_id,
+            job_title=job_title,
+            job_company=job_company,
+            job_location=job_location,
+            job_link=job_link,
+            job_summary=job_summary,
+        )
+        return jsonify({"status": "ok"}), 200
+
     @app.get("/api/salary-insights")
     def api_salary_insights():
         raw_title = (request.args.get("title") or "").strip()
