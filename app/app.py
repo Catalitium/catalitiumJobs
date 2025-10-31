@@ -1,7 +1,10 @@
+"""Flask application entry point and route definitions for Catalitium."""
+
 import os
 import logging
 import re
 from datetime import datetime, timezone, timedelta
+from typing import Tuple, Optional
 
 from flask import (
     Flask,
@@ -57,7 +60,8 @@ limiter = Limiter(
 )
 
 
-def create_app():
+def create_app() -> Flask:
+    """Instantiate and configure the Flask application."""
     app = Flask(__name__, template_folder="views/templates")
     env = ENVIRONMENT or "production"
 
@@ -78,8 +82,17 @@ def create_app():
     limiter.init_app(app)
     app.teardown_appcontext(close_db)
 
+    def _resolve_pagination(default_per_page: int = 20) -> Tuple[int, int]:
+        """Return (page, per_page) constrained to safe bounds."""
+        per_page_raw = request.args.get("per_page", default=default_per_page, type=int) or default_per_page
+        per_page = max(10, min(per_page_raw, int(app.config.get("PER_PAGE_MAX", 100))))
+        page_raw = request.args.get("page", default=1, type=int) or 1
+        page = max(1, page_raw)
+        return page, per_page
+
     @app.after_request
     def apply_analytics_cookie(response):
+        """Ensure the analytics session cookie is propagated when a new ID is issued."""
         sid_info = getattr(g, "_analytics_sid_new", None)
         if sid_info:
             cookie_name, sid = sid_info
@@ -115,14 +128,10 @@ def create_app():
 
     @app.get("/")
     def index():
+        """Render the main job search page with optional filters."""
         raw_title = (request.args.get("title") or "").strip()
         raw_country = (request.args.get("country") or "").strip()
-        page = request.args.get("page", default=1, type=int) or 1
-        if page < 1:
-            page = 1
-        per_page_req = request.args.get("per_page", default=20, type=int) or 20
-        per_page_req = max(10, min(per_page_req, int(app.config.get("PER_PAGE_MAX", 100))))
-        per_page = per_page_req
+        page, per_page = _resolve_pagination()
 
         cleaned_title, sal_floor, sal_ceiling = parse_salary_query(raw_title)
         title_q = normalize_title(cleaned_title)
@@ -272,13 +281,10 @@ def create_app():
 
     @app.get("/api/jobs")
     def api_jobs():
+        """Return jobs as JSON with pagination metadata."""
         raw_title = (request.args.get("title") or "").strip()
         raw_country = (request.args.get("country") or "").strip()
-        page = request.args.get("page", default=1, type=int) or 1
-        if page < 1:
-            page = 1
-        per_page_req = request.args.get("per_page", default=20, type=int) or 20
-        per_page = max(10, min(per_page_req, int(app.config.get("PER_PAGE_MAX", 100))))
+        page, per_page = _resolve_pagination()
 
         cleaned_title, _, _ = parse_salary_query(raw_title)
         country_q = normalize_country(raw_country)
@@ -331,6 +337,7 @@ def create_app():
     @app.post("/subscribe")
     @limiter.limit("5/minute;50/hour")
     def subscribe():
+        """Handle newsletter subscriptions from form or JSON payloads."""
         is_json = request.is_json
         payload = request.get_json(silent=True) or {} if is_json else request.form
         email = (payload.get("email") or "").strip()
@@ -384,6 +391,7 @@ def create_app():
     @app.post("/events/apply")
     @limiter.limit("30/minute;300/hour")
     def events_apply():
+        """Record apply intent analytics while leaving the main flow untouched."""
         payload = request.get_json(silent=True) or {}
         status = (payload.get("status") or "").strip() or "unknown"
         job_id = (payload.get("job_id") or payload.get("jobId") or "").strip()
@@ -417,6 +425,7 @@ def create_app():
 
     @app.get("/api/salary-insights")
     def api_salary_insights():
+        """Return a lightweight public dataset of jobs for salary insights."""
         raw_title = (request.args.get("title") or "").strip()
         raw_country = (request.args.get("country") or "").strip()
         title_q = normalize_title(raw_title)
@@ -442,6 +451,7 @@ def create_app():
 
     @app.get("/health")
     def health():
+        """Expose a readiness probe indicating the database is reachable."""
         try:
             db = get_db()
             with db.cursor() as cur:
@@ -455,6 +465,7 @@ def create_app():
 
 
 def _job_is_new(job_date_raw, row_date) -> bool:
+    """Return True when the job was posted within the last two days."""
     dt = _coerce_datetime(row_date) or _coerce_datetime(job_date_raw)
     if not dt:
         return False
@@ -464,7 +475,8 @@ def _job_is_new(job_date_raw, row_date) -> bool:
     return (now - dt) <= timedelta(days=2)
 
 
-def _coerce_datetime(value):
+def _coerce_datetime(value) -> Optional[datetime]:
+    """Convert assorted datetime-like inputs into timezone-aware datetimes when possible."""
     if not value:
         return None
     if isinstance(value, datetime):
@@ -499,6 +511,7 @@ def _coerce_datetime(value):
 
 
 def _to_lc(value: str) -> str:
+    """Return a lowercase camel-style version of a string for API responses."""
     parts = [p for p in re.split(r"[^A-Za-z0-9]+", value or "") if p]
     if not parts:
         return value or ""
