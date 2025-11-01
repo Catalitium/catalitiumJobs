@@ -661,62 +661,62 @@ COUNTRY_NORM = {
 }
 
 LOCATION_COUNTRY_HINTS = {
-    "amsterdam":"NL",
-    "atlanta":"US",
-    "austin":"US",
-    "barcelona":"ES",
-    "belgium":"BE",
-    "berlin":"DE",
-    "berlin, de":"DE",
-    "boston":"US",
-    "brussels":"BE",
-    "budapest":"HU",
-    "charlotte":"US",
-    "chicago":"US",
-    "copenhagen":"DK",
-    "dallas":"US",
-    "denmark":"DK",
-    "denver":"US",
-    "dublin":"IE",
-    "france":"FR",
-    "frankfurt":"DE",
-    "germany":"DE",
-    "hamburg":"DE",
-    "houston":"US",
-    "italy":"IT",
-    "lisbon":"PT",
-    "london":"UK",
-    "los angeles":"US",
-    "los":"US",
-    "madrid":"ES",
-    "miami":"US",
-    "milan":"IT",
-    "minneapolis":"US",
-    "munich":"DE",
-    "netherlands":"NL",
-    "new york":"US",
-    "oslo":"NO",
-    "paris":"FR",
-    "philadelphia":"US",
-    "phoenix":"US",
-    "pittsburgh":"US",
-    "portland":"US",
-    "porto":"PT",
-    "portugal":"PT",
-    "prague":"CZ",
-    "raleigh":"US",
-    "salt lake city":"US",
-    "salt":"US",
-    "san francisco":"US",
-    "seattle":"US",
-    "spain":"ES",
-    "stockholm":"SE",
-    "switzerland":"CH",
-    "tallinn":"EE",
-    "uk":"UK",
-    "vienna":"AT",
-    "washington":"US",
-    "zurich":"CH",
+    "amsterdam": "NL",
+    "atlanta": "US",
+    "austin": "US",
+    "barcelona": "ES",
+    "belgium": "BE",
+    "berlin": "DE",
+    "berlin, de": "DE",
+    "boston": "US",
+    "brussels": "BE",
+    "budapest": "HU",
+    "charlotte": "US",
+    "chicago": "US",
+    "copenhagen": "DK",
+    "dallas": "US",
+    "denmark": "DK",
+    "denver": "US",
+    "dublin": "IE",
+    "france": "FR",
+    "frankfurt": "DE",
+    "germany": "DE",
+    "hamburg": "DE",
+    "houston": "US",
+    "italy": "IT",
+    "lisbon": "PT",
+    "london": "UK",
+    "los angeles": "US",
+    "los": "US",
+    "madrid": "ES",
+    "miami": "US",
+    "milan": "IT",
+    "minneapolis": "US",
+    "munich": "DE",
+    "netherlands": "NL",
+    "new york": "US",
+    "oslo": "NO",
+    "paris": "FR",
+    "philadelphia": "US",
+    "phoenix": "US",
+    "pittsburgh": "US",
+    "portland": "US",
+    "porto": "PT",
+    "portugal": "PT",
+    "prague": "CZ",
+    "raleigh": "US",
+    "salt lake city": "US",
+    "salt": "US",
+    "san francisco": "US",
+    "seattle": "US",
+    "spain": "ES",
+    "stockholm": "SE",
+    "switzerland": "CH",
+    "tallinn": "EE",
+    "uk": "UK",
+    "vienna": "AT",
+    "washington": "US",
+    "zurich": "CH",
 }
 
 TITLE_SYNONYMS = {
@@ -902,26 +902,22 @@ class Job:
         with db.cursor() as cur:
             cur.execute("SELECT link FROM Jobs WHERE id = %s", [value_param])
             row = cur.fetchone()
-            if not row:
-                return None
-            link = None
-            if hasattr(row, 'keys'):
-                try:
-                    link = row.get('link') if hasattr(row, 'get') else row['link']
-                except Exception:
-                    link = None
-            if link is None:
-                cols = [desc[0] for desc in cur.description]
-                try:
-                    row_dict = dict(zip(cols, row))
-                    link = row_dict.get('link')
-                except Exception:
-                    link = None
-            if link is None and hasattr(row, 'link'):
-                link = getattr(row, 'link')
-            if isinstance(link, str):
-                return link.strip()
+        if not row:
             return None
+
+        link = None
+        try:
+            if isinstance(row, dict):
+                link = row.get("link")
+            elif hasattr(row, "keys"):
+                link = row["link"]
+            elif hasattr(row, "link"):
+                link = row.link
+            elif hasattr(row, "__getitem__"):
+                link = row[0]
+        except Exception:
+            link = None
+        return link.strip() if isinstance(link, str) else None
 
     @staticmethod
     def _where(title: Optional[str], country: Optional[str]) -> Tuple[Dict[str, str], Tuple[str, ...], Tuple[str, ...]]:
@@ -985,17 +981,25 @@ class Job:
         if country:
             c_raw = (country or "").strip().lower()
             if c_raw:
-                code = c_raw.upper() if len(c_raw) == 2 and c_raw.isalpha() else None
                 patterns_like: List[str] = []
                 equals_exact: List[str] = []
-                if code == "EU":
+                upper = c_raw.upper()
+                code = upper if len(upper) == 2 and upper.isalpha() else None
+
+                if upper == "HIGH_PAY":
+                    high_pay_cities = ["new york", "san francisco", "zurich"]
+                    for city in high_pay_cities:
+                        patterns_like.append(f"%{Job._escape_like(city)}%")
+                        equals_exact.append(city)
+                elif upper == "EU":
                     patterns_like, equals_exact = Job._country_patterns(Job._EU_FILTER_CODES | {"EU"})
-                elif code == "CH":
+                elif upper == "CH":
                     patterns_like, equals_exact = Job._country_patterns({"CH"})
                 elif code:
                     patterns_like, equals_exact = Job._country_patterns({code})
                 else:
                     patterns_like = [f"%{Job._escape_like(c_raw)}%"]
+
                 subclauses_pg: List[str] = []
                 subclauses_sqlite: List[str] = []
                 if patterns_like:
@@ -1020,8 +1024,20 @@ class Job:
 
     @staticmethod
     def _order_by(country: Optional[str]) -> str:
-        if country and country.strip().upper() == "EU":
+        if not country:
+            return "ORDER BY (date IS NULL) ASC, date DESC, id DESC"
+        code = country.strip().upper()
+        if code == "EU":
             return "ORDER BY RANDOM()"
+        if code == "HIGH_PAY":
+            return (
+                "ORDER BY CASE "
+                "WHEN LOWER(location) LIKE '%san francisco%' THEN 0 "
+                "WHEN LOWER(location) LIKE '%new york%' THEN 1 "
+                "WHEN LOWER(location) LIKE '%zurich%' THEN 2 "
+                "ELSE 3 END, "
+                "(date IS NULL) ASC, date DESC, id DESC"
+            )
         return "ORDER BY (date IS NULL) ASC, date DESC, id DESC"
 
 # ------------------------- Salary Parsing Functions --------------------------
@@ -1045,32 +1061,33 @@ def parse_salary_query(q: str):
         return ("", None, None)
     s = q.strip()
 
-    # Range (80k-120k)
-    m = re.search(r'(?i)(\d[\d,.\s]*k?)\s*[-â]\s*(\d[\d,.\s]*k?)', s)
-    if m:
-        low = parse_money_numbers(m.group(1))
-        high = parse_money_numbers(m.group(2))
-        return (s[:m.start()] + s[m.end():]).strip(), low[0] if low else None, high[-1] if high else None
+    range_match = re.search(r'(?i)(\d[\d,.\s]*k?)\s*[-\u2013]\s*(\d[\d,.\s]*k?)', s)
+    if range_match:
+        low_vals = parse_money_numbers(range_match.group(1))
+        high_vals = parse_money_numbers(range_match.group(2))
+        cleaned = (s[:range_match.start()] + s[range_match.end():]).strip()
+        return cleaned, low_vals[0] if low_vals else None, high_vals[-1] if high_vals else None
 
-    # Greater than
-    m = re.search(r'(?i)>\s*=?\s*(\d[\d,.\s]*k?)', s)
-    if m:
-        v = parse_money_numbers(m.group(1))
-        return (s[:m.start()] + s[m.end():]).strip(), v[0] if v else None, None
+    greater_match = re.search(r'(?i)>\s*=?\s*(\d[\d,.\s]*k?)', s)
+    if greater_match:
+        vals = parse_money_numbers(greater_match.group(1))
+        cleaned = (s[:greater_match.start()] + s[greater_match.end():]).strip()
+        return cleaned, vals[0] if vals else None, None
 
-    # Less than
-    m = re.search(r'(?i)<\s*=?\s*(\d[\d,.\s]*k?)', s)
-    if m:
-        v = parse_money_numbers(m.group(1))
-        return (s[:m.start()] + s[m.end():]).strip(), None, v[0] if v else None
+    less_match = re.search(r'(?i)<\s*=?\s*(\d[\d,.\s]*k?)', s)
+    if less_match:
+        vals = parse_money_numbers(less_match.group(1))
+        cleaned = (s[:less_match.start()] + s[less_match.end():]).strip()
+        return cleaned, None, vals[0] if vals else None
 
-    # Single number
-    m = re.search(r'(?i)(\d[\d,.\s]*k?)', s)
-    if m:
-        v = parse_money_numbers(m.group(1))
-        return (s[:m.start()] + s[m.end():]).strip(), v[0] if v else None, None
+    single_match = re.search(r'(?i)(\d[\d,.\s]*k?)', s)
+    if single_match:
+        vals = parse_money_numbers(single_match.group(1))
+        cleaned = (s[:single_match.start()] + s[single_match.end():]).strip()
+        return cleaned, vals[0] if vals else None, None
 
     return (s, None, None)
+
 
 # ------------------------- Formatting Helpers ------------------------------
 

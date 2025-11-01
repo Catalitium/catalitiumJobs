@@ -17,9 +17,6 @@ from flask import (
     g,
 )
 from email_validator import validate_email, EmailNotValidError
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-
 from .models.db import (
     SECRET_KEY,
     SUPABASE_URL,
@@ -48,18 +45,6 @@ BLACKLIST_LINKS = {
 
 ENVIRONMENT = os.getenv("FLASK_ENV") or os.getenv("ENV") or "development"
 
-if ENVIRONMENT == "production" and RATELIMIT_STORAGE_URL.startswith("memory://"):
-    logging.getLogger("catalitium").warning(
-        "Rate limiter disabled: configure RATELIMIT_STORAGE_URL with a shared backend."
-    )
-
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri=RATELIMIT_STORAGE_URL,
-    default_limits=["200 per hour"],
-)
-
-
 def create_app() -> Flask:
     """Instantiate and configure the Flask application."""
     app = Flask(__name__, template_folder="views/templates")
@@ -78,8 +63,6 @@ def create_app() -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
     )
-
-    limiter.init_app(app)
     app.teardown_appcontext(close_db)
 
     def _resolve_pagination(default_per_page: int = 20) -> Tuple[int, int]:
@@ -136,9 +119,19 @@ def create_app() -> Flask:
         cleaned_title, sal_floor, sal_ceiling = parse_salary_query(raw_title)
         title_q = normalize_title(cleaned_title)
         country_q = normalize_country(raw_country)
+        display_country = country_q
+        search_country = country_q
+        if (
+            sal_floor
+            and sal_floor >= 100000
+            and "100k" in raw_title.lower()
+            and not raw_country
+        ):
+            search_country = "HIGH_PAY"
+            display_country = "High-pay hubs"
 
         q_title = title_q or None
-        q_country = country_q or None
+        q_country = search_country or None
 
         try:
             total = Job.count(q_title, q_country)
@@ -151,7 +144,7 @@ def create_app() -> Flask:
                         raw_title=raw_title,
                         raw_country=raw_country,
                         norm_title=title_q,
-                        norm_country=country_q,
+                        norm_country=q_country or "",
                         sal_floor=sal_floor,
                         sal_ceiling=sal_ceiling,
                         result_count=total,
@@ -262,10 +255,10 @@ def create_app() -> Flask:
             "per_page": per_page,
             "has_prev": page > 1,
             "has_next": page < (pages if pages else 1),
-            "prev_url": url_for("index", title=title_q or None, country=country_q or None, page=page - 1)
+            "prev_url": url_for("index", title=title_q or None, country=(raw_country or None), page=page - 1)
             if page > 1
             else None,
-            "next_url": url_for("index", title=title_q or None, country=country_q or None, page=page + 1)
+            "next_url": url_for("index", title=title_q or None, country=(raw_country or None), page=page + 1)
             if page < (pages if pages else 1)
             else None,
         }
@@ -275,7 +268,7 @@ def create_app() -> Flask:
             results=items,
             count=total,
             title_q=title_q,
-            country_q=country_q,
+            country_q=display_country,
             pagination=pagination,
         )
 
@@ -335,7 +328,6 @@ def create_app() -> Flask:
         )
 
     @app.post("/subscribe")
-    @limiter.limit("5/minute;50/hour")
     def subscribe():
         """Handle newsletter subscriptions from form or JSON payloads."""
         is_json = request.is_json
@@ -389,7 +381,6 @@ def create_app() -> Flask:
         return redirect(url_for("index"))
 
     @app.post("/events/apply")
-    @limiter.limit("30/minute;300/hour")
     def events_apply():
         """Record apply intent analytics while leaving the main flow untouched."""
         payload = request.get_json(silent=True) or {}

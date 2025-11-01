@@ -106,17 +106,17 @@ function trackEvent(name, params){
       var body = JSON.stringify(payload);
       if (navigator.sendBeacon) {
         var blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon('/events/apply', blob);
-      trackEvent('job_apply', {
-        status: status || '',
-        job_id: payload.job_id || '',
-        job_title: payload.job_title || ''
-      });
-      return;
-    }
-    fetch('/events/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+        navigator.sendBeacon('/events/apply', blob);
+        trackEvent('job_apply', {
+          status: status || '',
+          job_id: payload.job_id || '',
+          job_title: payload.job_title || ''
+        });
+        return;
+      }
+      fetch('/events/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: body,
         keepalive: true,
         credentials: 'same-origin'
