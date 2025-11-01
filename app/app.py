@@ -213,7 +213,7 @@ def create_app() -> Flask:
                         (
                             "Data Engineer",
                             "Catalitium",
-                            "Berlin, DE",
+                            "London, UK",
                             "Build reliable pipelines and optimize warehouse performance.",
                             "2025.09.28",
                         ),
@@ -234,7 +234,7 @@ def create_app() -> Flask:
                         (
                             "Cloud DevOps Engineer",
                             "Nimbus",
-                            "Munich, DE",
+                            "Remote / Europe",
                             "Automate infrastructure, observability, and release workflows.",
                             "2025.09.25",
                         ),
@@ -460,6 +460,11 @@ def create_app() -> Flask:
         except Exception:
             return jsonify({"status": "error", "db": "failed"}), 503
         return jsonify({"status": "ok", "db": "connected"}), 200
+
+    @app.get("/legal")
+    def legal():
+        """Display combined privacy policy and terms information."""
+        return render_template("legal.html")
 
     return app
 

@@ -1,3 +1,11 @@
+function trackEvent(name, params){
+  try {
+    if (typeof window.catalitiumTrack === 'function') {
+      window.catalitiumTrack(name, params || {});
+    }
+  } catch(_){}
+}
+
 /* Lightweight helpers (no frameworks) */
 (function(){
   // Bottom-sheet Nav: open/close + focus trap + scroll lock
@@ -17,6 +25,7 @@
       sheet.classList.remove('hidden');
       document.body.classList.add('overflow-hidden');
       btn.setAttribute('aria-expanded','true');
+      trackEvent('nav_open', { surface: 'hamburger' });
       // Animate in: remove offscreen transforms + fade in scrim
       try {
         if (scrim) scrim.classList.remove('opacity-0');
@@ -60,6 +69,7 @@
       var act = a.getAttribute('data-nav-action');
       if (act === 'search'){
         e.preventDefault(); close(); var q=document.getElementById('q'); if(q) q.focus();
+        trackEvent('nav_action', { action: 'quick_search' });
       }
     });
   }
@@ -72,6 +82,7 @@
     document.addEventListener('click', function(e){
       var trg = e.target.closest('[data-open-subscribe]');
       if(!trg) return;
+      trackEvent('modal_open', { modal: 'subscribe', source: trg.getAttribute('data-open-subscribe') || 'cta' });
       try { subscribeDialog.showModal(); } catch(_) { subscribeDialog.open = true; }
     });
   }
@@ -95,16 +106,26 @@
       var body = JSON.stringify(payload);
       if (navigator.sendBeacon) {
         var blob = new Blob([body], { type: 'application/json' });
-        navigator.sendBeacon('/events/apply', blob);
-        return;
-      }
-      fetch('/events/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      navigator.sendBeacon('/events/apply', blob);
+      trackEvent('job_apply', {
+        status: status || '',
+        job_id: payload.job_id || '',
+        job_title: payload.job_title || ''
+      });
+      return;
+    }
+    fetch('/events/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
         body: body,
         keepalive: true,
         credentials: 'same-origin'
       }).catch(function(){});
+      trackEvent('job_apply', {
+        status: status || '',
+        job_id: payload.job_id || '',
+        job_title: payload.job_title || ''
+      });
     } catch(_){}
   }
   try { window.__applyAnalytics = sendApplyAnalytics; } catch(_){}
@@ -424,11 +445,17 @@
   var loc = document.getElementById('loc');
   var toggle = document.getElementById('weekly-toggle');
   var subDlg = document.getElementById('subscribeDialog');
-  var COUNTRY_MAP = { de:'DE', deu:'DE', germany:'DE', deutschland:'DE', ch:'CH', schweiz:'CH', suisse:'CH', svizzera:'CH', switzerland:'CH', at:'AT', 'sterreich':'AT', austria:'AT', eu:'EU', europe:'EU', uk:'UK', gb:'UK', england:'UK', 'united kingdom':'UK', us:'US', usa:'US', 'united states':'US', america:'US', es:'ES', spain:'ES', fr:'FR', france:'FR', it:'IT', italy:'IT', nl:'NL', netherlands:'NL', be:'BE', belgium:'BE', se:'SE', sweden:'SE', pl:'PL', poland:'PL', co:'CO', colombia:'CO', mx:'MX', mexico:'MX' };
-  var TITLE_MAP = { swe:'software engineer', 'software eng':'software engineer', 'sw eng':'software engineer', frontend:'front end', 'front-end':'front end', backend:'back end', 'back-end':'back end', fullstack:'full stack', 'full-stack':'full stack', pm:'product manager', 'prod mgr':'product manager', 'product owner':'product manager', ds:'data scientist', ml:'machine learning', mle:'machine learning engineer', sre:'site reliability engineer', devops:'devops', 'sec eng':'security engineer', infosec:'security' };
+  var COUNTRY_MAP = { de:'DE', deu:'DE', germany:'DE', deutschland:'DE', ch:'CH', schweiz:'CH', suisse:'CH', svizzera:'CH', switzerland:'CH', at:'AT', 'sterreich':'AT', austria:'AT', eu:'EU', europe:'EU', eur:'EU', 'european union':'EU', uk:'UK', gb:'UK', england:'UK', 'united kingdom':'UK', us:'US', usa:'US', 'united states':'US', america:'US', es:'ES', spain:'ES', fr:'FR', france:'FR', it:'IT', italy:'IT', nl:'NL', netherlands:'NL', be:'BE', belgium:'BE', se:'SE', sweden:'SE', pl:'PL', poland:'PL', pt:'PT', portugal:'PT', ie:'IE', ireland:'IE', dk:'DK', denmark:'DK', fi:'FI', finland:'FI', gr:'GR', greece:'GR', hu:'HU', hungary:'HU', ro:'RO', romania:'RO', sk:'SK', slovakia:'SK', si:'SI', slovenia:'SI', bg:'BG', bulgaria:'BG', hr:'HR', croatia:'HR', cy:'CY', cyprus:'CY', cz:'CZ', 'czech republic':'CZ', czech:'CZ', ee:'EE', estonia:'EE', lv:'LV', latvia:'LV', lt:'LT', lithuania:'LT', lu:'LU', luxembourg:'LU', mt:'MT', malta:'MT', co:'CO', colombia:'CO', mx:'MX', mexico:'MX' };
+  var TITLE_MAP = { swe:'software engineer', 'software eng':'software engineer', 'sw eng':'software engineer', frontend:'front end', 'front-end':'front end', backend:'back end', 'back-end':'back end', fullstack:'full stack', 'full-stack':'full stack', pm:'product manager', 'prod mgr':'product manager', 'product owner':'product manager', ds:'data scientist', ml:'machine learning', mle:'machine learning engineer', sre:'site reliability engineer', devops:'devops', 'sec eng':'security engineer', infosec:'security', programmer:'developer', coder:'developer' };
   function normCountry(v){ if(!v) return ''; var t=(v.trim().toLowerCase()); if(COUNTRY_MAP[t]) return COUNTRY_MAP[t]; if(/^[a-z]{2}$/.test(t)) return t.toUpperCase(); return v.trim(); }
   function normTitle(v){ if(!v) return ''; var s=v.toLowerCase(); Object.keys(TITLE_MAP).forEach(function(k){ if(s.indexOf(k)>=0) s=s.replace(new RegExp(k,'g'), TITLE_MAP[k]); }); return s.replace(/\s+/g,' ').trim(); }
-  if(form){ form.addEventListener('submit', function(){ if(q) q.value = normTitle(q.value); if(loc) loc.value = normCountry(loc.value); }); }
+  if(form){ form.addEventListener('submit', function(){
+    var titleVal = q ? normTitle(q.value) : '';
+    var countryVal = loc ? normCountry(loc.value) : '';
+    trackEvent('search_submit', { title: titleVal || '(empty)', country: countryVal || '(empty)' });
+    if(q) q.value = titleVal;
+    if(loc) loc.value = countryVal;
+  }); }
   if(toggle && subDlg){ toggle.addEventListener('change', function(){ if(toggle.checked){ try{subDlg.showModal();}catch(_) {subDlg.open=true;} var em=document.getElementById('subscribe-email'); if(em) em.focus(); }}); subDlg.addEventListener('close', function(){ toggle.checked=false; }); }
   // Log subscribe dialog native form submission (newsletter)
 })();
@@ -439,7 +466,7 @@
     var form = document.getElementById('search');
     var q = document.getElementById('q');
     var loc = document.getElementById('loc');
-    if (form) {
+   if (form) {
       form.addEventListener('submit', function(){
         // Show skeletons during navigation
         try {
@@ -472,7 +499,7 @@
     }
 
     // Optional details toggle (no-op unless elements exist)
-    document.querySelectorAll('[data-toggle="details"]').forEach(function(btn){
+   document.querySelectorAll('[data-toggle="details"]').forEach(function(btn){
       var opened = false;
       btn.addEventListener('click', function(){
         var art = btn.closest('article[data-job-id]');
@@ -483,6 +510,7 @@
         btn.setAttribute('aria-expanded', expanded);
         if (expanded && !opened) {
           opened = true;
+          trackEvent('details_toggle', { action: 'open', job_id: art && art.getAttribute('data-job-id') });
         }
       });
     });
@@ -524,5 +552,19 @@
       return observer.observe(card);
     }
     observer.observe(card);
+  });
+})();
+
+// --------------------------------------------------------------------
+// Filter chip analytics
+// --------------------------------------------------------------------
+(function(){
+  document.addEventListener('click', function(e){
+    var chip = e.target && e.target.closest('[data-filter-chip]');
+    if (!chip) return;
+    trackEvent('filter_chip', {
+      type: chip.getAttribute('data-filter-chip') || '',
+      value: chip.getAttribute('data-filter-value') || ''
+    });
   });
 })();

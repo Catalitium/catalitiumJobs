@@ -8,7 +8,7 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 try:
@@ -263,7 +263,6 @@ def insert_subscribe_event(email: str, status: str, *, source: str = "form") -> 
             )
     except Exception as exc:
         logger.debug("subscribe analytics skipped: %s", exc)
-
 
 def insert_search_event(
     *,
@@ -649,12 +648,75 @@ COUNTRY_NORM = {
     "deutschland":"DE","germany":"DE","deu":"DE","de":"DE",
     "switzerland":"CH","schweiz":"CH","suisse":"CH","svizzera":"CH","ch":"CH",
     "austria":"AT","Ã¶sterreich":"AT","at":"AT",
-    "europe":"EU","eu":"EU",
+    "europe":"EU","eu":"EU","eur":"EU","european union":"EU",
     "uk":"UK","gb":"UK","england":"UK","united kingdom":"UK",
     "usa":"US","united states":"US","america":"US","us":"US",
     "spain":"ES","es":"ES","france":"FR","fr":"FR","italy":"IT","it":"IT",
     "netherlands":"NL","nl":"NL","belgium":"BE","be":"BE","sweden":"SE","se":"SE",
     "poland":"PL","colombia":"CO","mexico":"MX",
+    "portugal":"PT","ireland":"IE","denmark":"DK","finland":"FI","greece":"GR",
+    "hungary":"HU","romania":"RO","slovakia":"SK","slovenia":"SI","bulgaria":"BG",
+    "croatia":"HR","cyprus":"CY","czech republic":"CZ","czechia":"CZ","estonia":"EE",
+    "latvia":"LV","lithuania":"LT","luxembourg":"LU","malta":"MT",
+}
+
+LOCATION_COUNTRY_HINTS = {
+    "amsterdam":"NL",
+    "atlanta":"US",
+    "austin":"US",
+    "barcelona":"ES",
+    "belgium":"BE",
+    "berlin":"DE",
+    "berlin, de":"DE",
+    "boston":"US",
+    "brussels":"BE",
+    "budapest":"HU",
+    "charlotte":"US",
+    "chicago":"US",
+    "copenhagen":"DK",
+    "dallas":"US",
+    "denmark":"DK",
+    "denver":"US",
+    "dublin":"IE",
+    "france":"FR",
+    "frankfurt":"DE",
+    "germany":"DE",
+    "hamburg":"DE",
+    "houston":"US",
+    "italy":"IT",
+    "lisbon":"PT",
+    "london":"UK",
+    "los angeles":"US",
+    "los":"US",
+    "madrid":"ES",
+    "miami":"US",
+    "milan":"IT",
+    "minneapolis":"US",
+    "munich":"DE",
+    "netherlands":"NL",
+    "new york":"US",
+    "oslo":"NO",
+    "paris":"FR",
+    "philadelphia":"US",
+    "phoenix":"US",
+    "pittsburgh":"US",
+    "portland":"US",
+    "porto":"PT",
+    "portugal":"PT",
+    "prague":"CZ",
+    "raleigh":"US",
+    "salt lake city":"US",
+    "salt":"US",
+    "san francisco":"US",
+    "seattle":"US",
+    "spain":"ES",
+    "stockholm":"SE",
+    "switzerland":"CH",
+    "tallinn":"EE",
+    "uk":"UK",
+    "vienna":"AT",
+    "washington":"US",
+    "zurich":"CH",
 }
 
 TITLE_SYNONYMS = {
@@ -664,6 +726,7 @@ TITLE_SYNONYMS = {
     "pm":"product manager","prod mgr":"product manager","product owner":"product manager",
     "ds":"data scientist","ml":"machine learning","mle":"machine learning engineer",
     "sre":"site reliability engineer","devops":"devops","sec eng":"security engineer","infosec":"security",
+    "programmer":"developer","coder":"developer",
 }
 
 def normalize_country(q: str) -> str:
@@ -696,6 +759,11 @@ def normalize_title(q: str) -> str:
 
 class Job:
     table = "Jobs"
+    _EU_CODES: Set[str] = {
+        "AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE",
+        "IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"
+    }
+    _EU_FILTER_CODES: Set[str] = {"DE", "ES", "NL"}
 
     @staticmethod
     def _normalize_title(value: Optional[str]) -> str:
@@ -707,6 +775,48 @@ class Job:
         value = value.replace("%", r"\%")
         value = value.replace("_", r"\_")
         return value
+
+    @staticmethod
+    def _country_patterns(codes: Iterable[str]) -> Tuple[List[str], List[str]]:
+        seps_before = [" ", "(", ",", "/", "-"]
+        seps_after = [" ", ")", ",", "/", "-"]
+        patterns: List[str] = []
+        equals: Set[str] = set()
+        seen_like: Set[str] = set()
+
+        def add_like(pattern: str) -> None:
+            if pattern not in seen_like:
+                patterns.append(pattern)
+                seen_like.add(pattern)
+
+        normalized_codes = {code.upper() for code in codes if code}
+        for code in normalized_codes:
+            token = Job._escape_like(code.lower())
+            equals.add(code.lower())
+            for before in seps_before:
+                for after in seps_after:
+                    add_like(f"%{before}{token}{after}%")
+                add_like(f"%{before}{token}")
+            if len(code) > 2:
+                add_like(f"%{token}%")
+
+        if "EU" in normalized_codes:
+            add_like(f"%{Job._escape_like('eu')}%")
+
+        aliases: Set[str] = set()
+        for alias, mapped in COUNTRY_NORM.items():
+            if mapped.upper() in normalized_codes and len(alias) > 2:
+                aliases.add(alias.lower())
+        for alias in sorted(aliases):
+            add_like(f"%{Job._escape_like(alias)}%")
+
+        for hint, mapped in LOCATION_COUNTRY_HINTS.items():
+            if mapped.upper() in normalized_codes:
+                add_like(f"%{Job._escape_like(hint)}%")
+                if len(hint) <= 3:
+                    equals.add(hint)
+
+        return patterns, sorted(equals)
 
     @staticmethod
     def count(title: Optional[str] = None, country: Optional[str] = None) -> int:
@@ -737,7 +847,7 @@ class Job:
         sql = f"""
             SELECT id, job_title, job_description, link, job_title_norm, location, job_date, date
             FROM Jobs {where_clause}
-            {Job._order_by()}
+            {Job._order_by(country)}
             LIMIT %s OFFSET %s
         """
         params.extend([int(limit), int(offset)])
@@ -823,46 +933,95 @@ class Job:
         if title:
             t_norm = Job._normalize_title(title)
             if t_norm:
-                like = f"%{Job._escape_like(t_norm)}%"
-                clause_pg = "(job_title_norm ILIKE %s ESCAPE '\\' OR LOWER(job_title) LIKE %s ESCAPE '\\' OR LOWER(job_description) LIKE %s ESCAPE '\\')"
-                clause_sqlite = "(job_title_norm LIKE ? ESCAPE '\\' OR LOWER(job_title) LIKE ? ESCAPE '\\' OR LOWER(job_description) LIKE ? ESCAPE '\\')"
-                clauses_pg.append(clause_pg)
-                clauses_sqlite.append(clause_sqlite)
-                params_pg.extend([like, like, like])
-                params_sqlite.extend([like, like, like])
+                tokens = [tok for tok in t_norm.split() if tok]
+                specials = {"remote", "developer"}
+                remote_flag = "remote" in tokens
+                developer_flag = "developer" in tokens
+                core_tokens = [tok for tok in tokens if tok not in specials]
+                core_query = " ".join(core_tokens).strip()
+
+                if core_query:
+                    like = f"%{Job._escape_like(core_query)}%"
+                    clause_pg = "(job_title_norm ILIKE %s ESCAPE '\\' OR LOWER(job_title) LIKE %s ESCAPE '\\' OR LOWER(job_description) LIKE %s ESCAPE '\\')"
+                    clause_sqlite = "(job_title_norm LIKE ? ESCAPE '\\' OR LOWER(job_title) LIKE ? ESCAPE '\\' OR LOWER(job_description) LIKE ? ESCAPE '\\')"
+                    clauses_pg.append(clause_pg)
+                    clauses_sqlite.append(clause_sqlite)
+                    params_pg.extend([like, like, like])
+                    params_sqlite.extend([like, like, like])
+
+                if remote_flag:
+                    remote_like = f"%{Job._escape_like('remote')}%"
+                    clause_pg_remote = "(job_title_norm ILIKE %s ESCAPE '\\' OR LOWER(job_title) LIKE %s ESCAPE '\\' OR LOWER(job_description) LIKE %s ESCAPE '\\' OR LOWER(location) LIKE %s ESCAPE '\\')"
+                    clause_sqlite_remote = "(job_title_norm LIKE ? ESCAPE '\\' OR LOWER(job_title) LIKE ? ESCAPE '\\' OR LOWER(job_description) LIKE ? ESCAPE '\\' OR LOWER(location) LIKE ? ESCAPE '\\')"
+                    clauses_pg.append(clause_pg_remote)
+                    clauses_sqlite.append(clause_sqlite_remote)
+                    params_pg.extend([remote_like, remote_like, remote_like, remote_like])
+                    params_sqlite.extend([remote_like, remote_like, remote_like, remote_like])
+
+                if developer_flag:
+                    dev_terms = ["developer", "programmer", "coder", "software developer", "software engineer"]
+                    patterns = [f"%{Job._escape_like(term)}%" for term in dev_terms]
+                    clause_pg_terms: List[str] = []
+                    clause_sqlite_terms: List[str] = []
+                    for _ in dev_terms:
+                        clause_pg_terms.extend([
+                            "job_title_norm ILIKE %s ESCAPE '\\'",
+                            "LOWER(job_title) LIKE %s ESCAPE '\\'",
+                            "LOWER(job_description) LIKE %s ESCAPE '\\'",
+                        ])
+                        clause_sqlite_terms.extend([
+                            "job_title_norm LIKE ? ESCAPE '\\'",
+                            "LOWER(job_title) LIKE ? ESCAPE '\\'",
+                            "LOWER(job_description) LIKE ? ESCAPE '\\'",
+                        ])
+                    clause_pg_dev = "(" + " OR ".join(clause_pg_terms) + ")"
+                    clause_sqlite_dev = "(" + " OR ".join(clause_sqlite_terms) + ")"
+                    clauses_pg.append(clause_pg_dev)
+                    clauses_sqlite.append(clause_sqlite_dev)
+                    for pattern in patterns:
+                        params_pg.extend([pattern, pattern, pattern])
+                        params_sqlite.extend([pattern, pattern, pattern])
 
         if country:
             c_raw = (country or "").strip().lower()
             if c_raw:
                 code = c_raw.upper() if len(c_raw) == 2 and c_raw.isalpha() else None
-                patterns: List[str] = []
-                if code:
-                    token = Job._escape_like(code.lower())
-                    seps_before = [" ", "(", ",", "/", "-"]
-                    seps_after = [" ", ")", ",", "/", "-"]
-                    for before in seps_before:
-                        for after in seps_after:
-                            patterns.append(f"%{before}{token}{after}%")
-                        patterns.append(f"%{before}{token}")
-                    names = sorted({name for name, mapped in COUNTRY_NORM.items() if mapped.upper() == code})
-                    for name in names:
-                        patterns.append(f"%{Job._escape_like(name.lower())}%")
+                patterns_like: List[str] = []
+                equals_exact: List[str] = []
+                if code == "EU":
+                    patterns_like, equals_exact = Job._country_patterns(Job._EU_FILTER_CODES | {"EU"})
+                elif code == "CH":
+                    patterns_like, equals_exact = Job._country_patterns({"CH"})
+                elif code:
+                    patterns_like, equals_exact = Job._country_patterns({code})
                 else:
-                    patterns.append(f"%{Job._escape_like(c_raw)}%")
-                if patterns:
-                    clause_pg = "(" + " OR ".join(["LOWER(location) LIKE %s ESCAPE '\\'"] * len(patterns)) + ")"
-                    clause_sqlite = "(" + " OR ".join(["LOWER(location) LIKE ? ESCAPE '\\'"] * len(patterns)) + ")"
+                    patterns_like = [f"%{Job._escape_like(c_raw)}%"]
+                subclauses_pg: List[str] = []
+                subclauses_sqlite: List[str] = []
+                if patterns_like:
+                    subclauses_pg.append("(" + " OR ".join(["LOWER(location) LIKE %s ESCAPE '\\'"] * len(patterns_like)) + ")")
+                    subclauses_sqlite.append("(" + " OR ".join(["LOWER(location) LIKE ? ESCAPE '\\'"] * len(patterns_like)) + ")")
+                if equals_exact:
+                    subclauses_pg.append("(" + " OR ".join(["LOWER(location) = %s"] * len(equals_exact)) + ")")
+                    subclauses_sqlite.append("(" + " OR ".join(["LOWER(location) = ?"] * len(equals_exact)) + ")")
+                if subclauses_pg:
+                    clause_pg = "(" + " OR ".join(subclauses_pg) + ")"
+                    clause_sqlite = "(" + " OR ".join(subclauses_sqlite) + ")"
                     clauses_pg.append(clause_pg)
                     clauses_sqlite.append(clause_sqlite)
-                    params_pg.extend(patterns)
-                    params_sqlite.extend(patterns)
+                    params_pg.extend(patterns_like)
+                    params_sqlite.extend(patterns_like)
+                    params_pg.extend([eq.lower() for eq in equals_exact])
+                    params_sqlite.extend([eq.lower() for eq in equals_exact])
 
         where_pg = f"WHERE {' AND '.join(clauses_pg)}" if clauses_pg else ""
         where_sqlite = f"WHERE {' AND '.join(clauses_sqlite)}" if clauses_sqlite else ""
         return {"pg": where_pg, "sqlite": where_sqlite}, tuple(params_sqlite), tuple(params_pg)
 
     @staticmethod
-    def _order_by() -> str:
+    def _order_by(country: Optional[str]) -> str:
+        if country and country.strip().upper() == "EU":
+            return "ORDER BY RANDOM()"
         return "ORDER BY (date IS NULL) ASC, date DESC, id DESC"
 
 # ------------------------- Salary Parsing Functions --------------------------
@@ -946,5 +1105,3 @@ def clean_job_description_text(text: str) -> str:
     # Remove a standalone leading 'Details' line
     t = re.sub(r"^\s*Details\s*\n+", "", t, flags=re.IGNORECASE)
     return t.strip()
-
-

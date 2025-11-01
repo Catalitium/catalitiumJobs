@@ -104,14 +104,16 @@
     {# Title chips #}
     {% set t = (title_q or '') %}
     {% set c = (country_q or '') %}
+    <a href="{{ url_for('index', title=(t ~ ' ai').strip(), country=c) }}" data-filter-chip="title" data-filter-value="ai" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'ai' in (t|lower) else '' }}">AI</a>
+    <a href="{{ url_for('index', title=(t ~ ' developer').strip(), country=c) }}" data-filter-chip="title" data-filter-value="developer" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'developer' in (t|lower) else '' }}">Developer</a>
     <a href="{{ url_for('index', title=(t ~ ' remote').strip(), country=c) }}" data-filter-chip="title" data-filter-value="remote" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'remote' in (t|lower) else '' }}">Remote</a>
     <a href="{{ url_for('index', title=(t ~ ' senior').strip(), country=c) }}" data-filter-chip="title" data-filter-value="senior" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'senior' in (t|lower) else '' }}">Senior</a>
-    <a href="{{ url_for('index', title=(t ~ ' ai').strip(), country=c) }}" data-filter-chip="title" data-filter-value="ai" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if 'ai' in (t|lower) else '' }}">AI</a>
     <a href="{{ url_for('index', title=(t ~ ' 100k').strip(), country=c) }}" data-filter-chip="title" data-filter-value=">100k" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if '100k' in (t|lower) else '' }}">>100k</a>
     {# Country chips #}
-    <a href="{{ url_for('index', title=t, country='US') }}" data-filter-chip="country" data-filter-value="US" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='US' else '' }}">US</a>
-    <a href="{{ url_for('index', title=t, country='DE') }}" data-filter-chip="country" data-filter-value="DE" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='DE' else '' }}">DE</a>
+    <a href="{{ url_for('index', title=t, country='CH') }}" data-filter-chip="country" data-filter-value="CH" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='CH' else '' }}">CH</a>
+    <a href="{{ url_for('index', title=t, country='EU') }}" data-filter-chip="country" data-filter-value="EU" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='EU' else '' }}">EU</a>
     <a href="{{ url_for('index', title=t, country='UK') }}" data-filter-chip="country" data-filter-value="UK" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='UK' else '' }}">UK</a>
+    <a href="{{ url_for('index', title=t, country='US') }}" data-filter-chip="country" data-filter-value="US" class="filter-chip inline-flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 text-slate-700 hover:border-brand whitespace-nowrap snap-start {{ 'bg-blue-50 border-brand text-brand' if c=='US' else '' }}">US</a>
   </div>
   <div class="sr-only" aria-live="polite">Quick filters</div>
   </div>
@@ -158,7 +160,7 @@
     {% else %}
       <div class="rounded-xl border border-slate-200 p-6 text-slate-600 text-center">
         <p class="font-medium">No jobs found.</p>
-        <p class="text-xs mt-1">Try broader keywords (e.g., engineer, pm) or another region (e.g., DE, EU).</p>
+        <p class="text-xs mt-1">Try broader keywords (e.g., engineer, pm) or another region (e.g., CH, EU, UK, US).</p>
       </div>
     {% endif %}
   </div>
